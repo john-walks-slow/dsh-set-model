@@ -5,8 +5,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import {
 	applyModelSelection,
 	resolveCurrentSelection,
-	listAvailableModels,
-	isPlanModeActive
+	listAvailableModels
 } from "./controller.js";
 import type { ResolvedSetModelConfig } from "./config.js";
 
@@ -125,57 +124,6 @@ export function setModelTool(ctx: Context, config: ResolvedSetModelConfig) {
 				previous: cleanPrevious,
 				current: cleanCurrent,
 				message
-			};
-		}
-	});
-}
-
-/**
- * Tool: get_model
- * Allows the agent to inspect the currently active model, reasoning depth, and plan mode status.
- */
-export function getModelTool(ctx: Context) {
-	return defineTool({
-		name: "get_model",
-		description: "Inspect the current session's active model, provider, reasoning depth, and Plan Mode status.",
-		parameters: {},
-		output: {
-			schema: {
-				type: "object",
-				additionalProperties: false,
-				properties: {
-					provider: { type: "string", required: true },
-					model: { type: "string", required: true },
-					reasoningEffort: { type: "string" },
-					planModeActive: { type: "boolean", required: true }
-				}
-			},
-			render: (_args, val): ContentBlock[] => {
-				const effort = val.reasoningEffort ? ` (reasoning: ${val.reasoningEffort})` : "";
-				const planStatus = val.planModeActive ? " [Plan Mode Active]" : " [Normal Execution]";
-				return [
-					{
-						type: "text",
-						text: `Active Model: ${val.provider}/${val.model}${effort}${planStatus}`
-					}
-				];
-			}
-		},
-		presentCall: () => ({
-			card: "generic",
-			title: "Inspect active model selection",
-			kind: "read"
-		}),
-		async execute(_args, exec) {
-			const activeAgent = requireAgent(exec.agent);
-			const current = resolveCurrentSelection(activeAgent, ctx);
-			const planModeActive = isPlanModeActive(activeAgent, ctx);
-
-			return {
-				provider: current.provider,
-				model: current.model,
-				...(current.reasoningEffort ? { reasoningEffort: current.reasoningEffort } : {}),
-				planModeActive
 			};
 		}
 	});

@@ -1,26 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { setModelTool, getModelTool, listModelsTool } from "../src/tools.js";
+import { setModelTool, listModelsTool } from "../src/tools.js";
 import { resolveConfig } from "../src/config.js";
 import { createMockContext, createMockSession, createMockAgent } from "./helpers.js";
-
-test("Tools: get_model returns active model and plan status", async () => {
-	const mock = createMockContext();
-	const session = createMockSession("tool-s1");
-	const agent = createMockAgent(session, mock.ctx);
-
-	const getTool = getModelTool(mock.ctx);
-	assert.equal(getTool.name, "get_model");
-
-	const res: any = await getTool.execute({}, { agent } as any);
-	assert.equal(res.provider, "deepseek");
-	assert.equal(res.model, "deepseek-chat");
-	assert.equal(res.planModeActive, false);
-
-	const rendered = getTool.output.render({}, res);
-	const text = (rendered[0] as any)?.text;
-	assert.ok(text?.includes("Active Model: deepseek/deepseek-chat"));
-});
 
 test("Tools: set_model executes valid model change and renders feedback", async () => {
 	const mock = createMockContext();

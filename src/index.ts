@@ -7,12 +7,13 @@ import { Config, resolveConfig, type ResolvedSetModelConfig } from "./config.js"
 import {
 	applyModelSelection,
 	resolveCurrentSelection,
+	isPlanModeActive,
 	type ActiveModelSelection
 } from "./controller.js";
-import { setModelTool, getModelTool, listModelsTool } from "./tools.js";
+import { setModelTool, listModelsTool } from "./tools.js";
 
 export const name = "dsh-set-model";
-export const inject = ["tools", "llm", "agents", "sessionProjections", "tokenMeter", "agentDefaultModel"];
+export const inject = ["tools", "llm", "agents", "sessionProjections", "tokenMeter", "agentDefaultModel", "systemPrompt"];
 export { Config };
 
 export const SETTINGS_NAMESPACE = "dsh-set-model";
@@ -35,7 +36,20 @@ export function apply(ctx: Context, initialConfig: Record<string, unknown> = {})
 		});
 	});
 
-	// 2. Register agent tools for root agents
+	// 2. System prompt section: dynamically inject active model into context every round
+	ctx.systemPrompt.section({
+		name: "dsh:active_model_context",
+		order: 10,
+		text: (context) => {
+			if (!context.agent) return "";
+			const current = resolveCurrentSelection(context.agent, ctx);
+			const effort = current.reasoningEffort ? ` · reasoning: ${current.reasoningEffort}` : "";
+			const planStatus = isPlanModeActive(context.agent, ctx) ? " [Plan Mode Active]" : "";
+			return `[Current active model: ${current.provider}/${current.model}${effort}${planStatus}]`;
+		}
+	});
+
+	// 3. Register agent tools for root agents
 	const registeredAgents = new WeakSet<Agent>();
 	const registerToolsForAgent = (agent: Agent) => {
 		if (registeredAgents.has(agent)) return;
@@ -44,7 +58,6 @@ export function apply(ctx: Context, initialConfig: Record<string, unknown> = {})
 
 		if (currentConfig.enableAgentTools) {
 			agent.ctx.tools.register(setModelTool(ctx, currentConfig));
-			agent.ctx.tools.register(getModelTool(ctx));
 			agent.ctx.tools.register(listModelsTool(ctx, currentConfig));
 		}
 	};

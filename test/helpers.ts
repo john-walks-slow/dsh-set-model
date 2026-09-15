@@ -133,6 +133,11 @@ export function createMockContext(): {
 				return this.rootsList;
 			}
 		},
+		systemPrompt: {
+			section(_sec: any) {
+				return () => {};
+			}
+		},
 		inject(deps: string[], cb: (injectedCtx: any) => void) {
 			cb(ctx);
 		},
