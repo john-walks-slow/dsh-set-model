@@ -36,8 +36,8 @@ export function apply(ctx: Context, initialConfig: Record<string, unknown> = {})
 		});
 	});
 
-	// 2. System prompt section: dynamically inject active model into context every round
-	ctx.systemPrompt.section({
+	// 2. Dynamic Runtime Context: inject active model into tail runtime-context snapshot (cache-safe)
+	ctx.systemPrompt.context({
 		name: "dsh:active_model_context",
 		order: 10,
 		text: (context) => {

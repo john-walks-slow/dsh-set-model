@@ -136,6 +136,9 @@ export function createMockContext(): {
 		systemPrompt: {
 			section(_sec: any) {
 				return () => {};
+			},
+			context(_ctx: any) {
+				return () => {};
 			}
 		},
 		inject(deps: string[], cb: (injectedCtx: any) => void) {
