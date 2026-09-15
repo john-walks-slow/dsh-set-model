@@ -1,0 +1,57 @@
+{
+  "name": "dsh-set-model",
+  "version": "0.1.0",
+  "description": "Dynamic model and reasoning depth switching for DeepSeek Harness: agent-autonomous tools (set_model/get_model/list_models) and seamless plan mode auto-transition.",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/src",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test dist/test/*.test.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "model-selection",
+    "plan-mode",
+    "reasoning-effort"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-agent": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-session": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.2-rc.1",
+    "@deepseek-ai/schemastery": "3.18.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-agent-default-model": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-plan-mode": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-settings": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-token-meter": "0.1.2-rc.1",
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.3"
+  }
+}
