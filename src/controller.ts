@@ -87,7 +87,7 @@ export async function applyModelSelection(
 	const targetProvider = target.provider?.trim() || current.provider;
 	const targetModel = target.model?.trim() || current.model;
 	const targetEffort = target.reasoningEffort !== undefined
-		? (target.reasoningEffort === "off" || target.reasoningEffort === "" ? undefined : target.reasoningEffort)
+		? (target.reasoningEffort === "" || target.reasoningEffort === "default" ? undefined : target.reasoningEffort)
 		: current.reasoningEffort;
 
 	// 1. Whitelist validation
