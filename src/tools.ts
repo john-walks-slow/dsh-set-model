@@ -40,6 +40,11 @@ export function setModelTool(ctx: Context, config: ResolvedSetModelConfig) {
 				type: "string",
 				enum: ["off", "low", "high", "max"],
 				description: "Target reasoning effort ('off' to disable thinking; 'low', 'high', 'max' to set thinking depth)."
+			},
+			reason: {
+				type: "string",
+				required: true,
+				description: "Mandatory explanation of why this switch is needed (task phase change, difficulty, cost, etc.). Switching invalidates the session's KV cache, so justify that the switch is worth it and not frequent."
 			}
 		},
 		output: {
@@ -81,7 +86,8 @@ export function setModelTool(ctx: Context, config: ResolvedSetModelConfig) {
 		presentCall: (args) => ({
 			card: "generic",
 			title: `Switch model: ${args.provider ?? "*"}/${args.model ?? "*"}${args.reasoningEffort ? ` (${args.reasoningEffort})` : ""}`,
-			kind: "other"
+			kind: "other",
+			rawInput: args.reason ? { reason: args.reason } : undefined
 		}),
 		async execute(args, exec) {
 			const activeAgent = requireAgent(exec.agent);
@@ -105,7 +111,8 @@ export function setModelTool(ctx: Context, config: ResolvedSetModelConfig) {
 			);
 
 			const reasoningText = normalized.reasoningEffort ? ` · reasoning: ${normalized.reasoningEffort}` : "";
-			const message = `Model successfully switched to ${normalized.provider}/${normalized.model}${reasoningText}. Effective from the next step.`;
+			const message = `Model successfully switched to ${normalized.provider}/${normalized.model}${reasoningText}. Effective from the next step.` +
+				(args.reason ? `\nReason: ${args.reason}` : "");
 
 			const cleanPrevious: any = {
 				provider: previous.provider,

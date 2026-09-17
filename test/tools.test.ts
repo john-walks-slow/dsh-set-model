@@ -14,7 +14,7 @@ test("Tools: set_model executes valid model change and renders feedback", async 
 	assert.equal(setTool.name, "set_model");
 
 	const res: any = await setTool.execute(
-		{ provider: "anthropic", model: "claude-3-7-sonnet", reasoningEffort: "high" },
+		{ provider: "anthropic", model: "claude-3-7-sonnet", reasoningEffort: "high", reason: "phase change to deep analysis" },
 		{ agent } as any
 	);
 
@@ -28,6 +28,7 @@ test("Tools: set_model executes valid model change and renders feedback", async 
 	const text = (rendered[0] as any)?.text;
 	assert.ok(text?.includes("Model successfully switched to anthropic/claude-3-7-sonnet"));
 	assert.ok(text?.includes("reasoning: high"));
+	assert.ok(text?.includes("Reason: phase change to deep analysis"));
 });
 
 test("Tools: set_model rejects empty input", async () => {
@@ -42,7 +43,7 @@ test("Tools: set_model rejects empty input", async () => {
 		async () => {
 			await setTool.execute({}, { agent } as any);
 		},
-		/at least one of `provider`, `model`, or `reasoningEffort` must be provided/
+		/missing required property "reason"|at least one of `provider`, `model`, or `reasoningEffort` must be provided/
 	);
 });
 
