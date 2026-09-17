@@ -87,7 +87,7 @@ Plan 模式是 DSH 的一等协作状态：
 ## 4. 结论
 
 技术可行性完全具备，方案路径清晰：
-1. 新建独立插件项目 `/root/projects/dsh-set-model`；
+1. 新建独立插件项目（独立仓库目录，以包名 `dsh-set-model` 命名）；
 2. 实现 `SetModelController` 服务与 `set_model`、`get_model`、`list_models` 工具；
 3. 挂载 `agent/pre-step` 监听器，实现 Plan 模式自动暂存与升降级切换；
 4. 提供完整的单元测试与端到端验证。

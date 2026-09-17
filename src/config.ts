@@ -33,8 +33,8 @@ export interface SetModelPluginConfig {
 export const Config = z.object({
 	planModel: ModelSelectionConfigSchema.description("Model and reasoning effort automatically activated upon entering Plan Mode"),
 	autoRestorePlanModel: z.boolean().default(true).description("Whether to automatically restore the non-plan model when exiting Plan Mode"),
-	enableAgentTools: z.boolean().default(true).description("Whether to register set_model, get_model, and list_models tools for root agents"),
-	allowedProviders: z.array(z.string()).default([]).description("Optional whitelist of provider IDs permitted for switch_model. Empty allows all registered providers.")
+	enableAgentTools: z.boolean().default(true).description("Whether to register set_model and list_models tools for root agents"),
+	allowedProviders: z.array(z.string()).default([]).description("Optional whitelist of provider IDs permitted for set_model. Empty allows all registered providers.")
 });
 
 export interface ResolvedSetModelConfig {

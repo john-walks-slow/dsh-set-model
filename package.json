@@ -1,7 +1,7 @@
 {
   "name": "dsh-set-model",
   "version": "0.1.0",
-  "description": "Dynamic model and reasoning depth switching for DeepSeek Harness: agent-autonomous tools (set_model/get_model/list_models) and seamless plan mode auto-transition.",
+  "description": "Dynamic model and reasoning-effort switching for DeepSeek Harness (DSH): set_model / list_models agent tools, plan-mode auto-transition, provider whitelist and context-window guards, active-model runtime context injection. dsh-set-model：为 DSH 提供动态模型与思考深度切换——Agent 自主调模工具（set_model / list_models）、Plan 模式自动升降级、Provider 白名单与上下文窗口护栏、活跃模型运行时上下文注入。",
   "type": "module",
   "main": "./dist/src/index.js",
   "exports": {
@@ -18,7 +18,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json && node --test dist/test/*.test.js"
+    "test": "tsc -p tsconfig.json && node --test dist/test/*.test.js",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm test"
   },
   "dsh": {
     "bundle": {
@@ -29,11 +31,28 @@
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
+    "model-switching",
     "model-selection",
+    "reasoning-effort",
     "plan-mode",
-    "reasoning-effort"
+    "llm",
+    "agent-tools",
+    "模型切换",
+    "模型选择",
+    "思考深度",
+    "推理",
+    "规划模式"
   ],
   "license": "MIT",
+  "author": "johnnren",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/john-walks-slow/dsh-set-model.git"
+  },
+  "homepage": "https://github.com/john-walks-slow/dsh-set-model#readme",
+  "bugs": {
+    "url": "https://github.com/john-walks-slow/dsh-set-model/issues"
+  },
   "engines": {
     "node": ">=22.5"
   },

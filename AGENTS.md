@@ -3,14 +3,14 @@
 ## 职责
 
 为 DSH 提供动态模型与思考深度切换能力：
-1. 向 Agent 注册 `set_model`、`get_model`、`list_models` 自主调模工具；
+1. 向 Agent 注册 `set_model`、`list_models` 自主调模工具；
 2. 提供与 Plan 模式联动的模型自动升降级机制（进入 Plan 模式自动切为高智力模型，退出自动恢复日常执行模型）。
 
 ## 地图
 
 - `src/config.ts` — 插件配置 Schema（planModel、autoRestorePlanModel、enableAgentTools 等）
 - `src/controller.ts` — 核心控制器：模型校验（`ctx.llm.resolveCallConfig`）、Token 容量水位校验、活跃模型解析、事件写入（`model/selection`）
-- `src/tools.ts` — 工具注册：`set_model`、`get_model`、`list_models`
+- `src/tools.ts` — 工具注册：`set_model`、`list_models`
 - `src/index.ts` — Cordis 插件入口：服务注入、工具注册、`agent/pre-step` 钩子联动 Plan 模式
 - `test/` — 单元测试与场景化断言
 
