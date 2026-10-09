@@ -26,4 +26,4 @@
 
 ## 遗留待办
 
-- `package.json` 仍把 `dsh-settings` 声明为 optional peer，但代码已不再 import 它（README 第 111 行的依赖说明同步提及）；若确认不需要，可随依赖清理一并移除。
+- 无。`dsh-settings` 的 optional peer 声明、devDependency 与 README 第 111 行的依赖说明已随本次清理移除（代码已不再 import 它）。
