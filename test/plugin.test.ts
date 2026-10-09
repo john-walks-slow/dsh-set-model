@@ -124,8 +124,17 @@ test("apply: the runtime context line reports the running preset, effort include
 
 	// A route no preset covers still renders, just without the preset segment.
 	(mock.ctx as any).agentDefaultModel.currentSelection = () => ({ provider: "cpa", model: "omni" });
-	const unmatched = (mock.ctx as any).systemPrompt.contexts[0].text({ agent });
-	assert.equal(unmatched, "[Current active model: cpa/omni]");
+	const contribution = (mock.ctx as any).systemPrompt.contexts[0];
+	assert.equal(contribution.text({ agent }), "[Current active model: cpa/omni]");
+
+	// No agent (e.g. a host-level turn) contributes nothing at all.
+	assert.equal(contribution.text({}), "");
+
+	// Plan Mode is appended to the same line.
+	(mock.ctx as any).sessionProjections = {
+		stateOf: (_session: unknown, kind: string) => (kind === "plan" ? { active: true } : undefined)
+	};
+	assert.equal(contribution.text({ agent }), "[Current active model: cpa/omni [Plan Mode Active]]");
 });
 
 test("apply: a volatile-only settings write re-registers the tool set without a reload", () => {

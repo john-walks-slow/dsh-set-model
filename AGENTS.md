@@ -26,7 +26,7 @@
 - **浏览器半的 inject 必须写全**：客户端 ctx 代理对未注入的服务访问直接抛错（`cannot get property "remote.session" without inject`），错误只在浏览器控制台可见。当前需要 `slots`、`remote`、`remote.settings`、`remote.session`
 - **浏览器半是构建产物**：改完必须 `npm run build`（或 `npm run build:client`）重建 `lib/client.js`；`__ModuleLoader__.load({ id })` 的 id 必须等于包名 `dsh-set-model`，否则整条 combo bundle 二次执行、Web 端 Failed to load plugins
 - **设置页可见性**：DSH 0.2 的 `SettingsForms.describe()` 只收录含 volatile 字段的 Config，且只投影 volatile 字段；设置命名空间 = profile loader entry id（本插件为 `set-model`）
-- **e2e 的配置必须播种成用户层，不能走 `dsh --patch`**：`--patch` 是覆盖层（overlay），设置页会判定该命名空间"被 home patch 或命令行覆盖"而**拒绝写入**，于是"页面保存 → 重载仍生效"的用例会变成假绿（保存静默失败，重载读到的其实是种子值）。种子写进 `$DSH_HOME/profiles/web/cordis.patch.yml`（`dsh-e2e start --patch e2e/fixture/cordis.patch.yml` 已按此实现）才可写、可复现
+- **e2e 的配置必须播种成用户层，不能走 `dsh --patch`**：`--patch` 是覆盖层（overlay），覆盖层的值优先于用户层。写与覆盖层**不同**的值 → 设置页判定该命名空间被外部覆盖、拒绝写入并显示提示；写与覆盖层**相同**的值 → 写入被接受但结果被覆盖层遮蔽（`composeEntries` 对 entry 的 `config` 是整对象覆盖）。后者会让"页面保存 → 重载仍生效"的用例**假绿**：保存看似成功，读回的其实是覆盖层那份种子值。种子写进 `$DSH_HOME/profiles/web/cordis.patch.yml`（`dsh-e2e start --patch e2e/fixture/cordis.patch.yml` 已按此实现）才可写、可复现；e2e 断言也必须写与种子**不同**的探针值
 - 平台 API 以 `/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/` 的 `.d.ts` 为准；宿主版本切换时同步 `peerDependencies` 区间与 `devDependencies` 版本，并按 issue #1 的方式验证（`npm run check` + 0.2.x/0.1.7 双版本）
 
 ## 已知边界

@@ -10,9 +10,9 @@
 | 验证步骤 | 预期结果 | 实际结果 | 状态 | 证据 |
 | -------- | -------- | -------- | ---- | ---- |
 | `npm run check` | 宿主与浏览器半两份 tsc 均通过 | 0 错误 | 通过 | `tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit` |
-| `npm test` | 全部单测通过（含以真实 `Config["~standard"].validate()` 构造的 volatile 夹具） | 28/28 通过 | 通过 | `node --test dist/test/*.test.js` |
+| `npm test` | 全部单测通过（含以真实 `Config["~standard"].validate()` 构造的 volatile 夹具） | 30/30 通过 | 通过 | `node --test dist/test/*.test.js` |
 | `npm run build` | 产出 `dist/src/**` 与 `lib/client.js`，且后者语法合法 | 构建成功，`node --check lib/client.js` 通过 | 通过 | `scripts/build-client.mjs` 内置语法检查 |
-| `dsh-e2e run e2e/verify-policy-page.mjs` | GUI 启动无 pageerror/console.error；设置页注册、读写、连续保存、刷新后持久化；自由模式 Plan 目标半填被拦 | 22/22 断言通过 | 通过 | 见下方「e2e 覆盖」 |
+| `dsh-e2e run e2e/verify-policy-page.mjs` | GUI 启动无 pageerror/console.error；设置页注册、读写、连续保存、刷新后持久化；自由模式 Plan 目标半填与只填思考强度被拦 | 22/22 断言通过 | 通过 | 见下方「e2e 覆盖」 |
 | 配置诊断 | 重复 id / 缺 provider / 无效 planPreset 只记日志、跳过该条，插件照常加载 | 与预期一致 | 通过 | `test/config.test.ts` |
 | 模式分支 | 自由模式只注册 `set_model`/`list_models`；档位模式只注册 `switch_preset`/`list_presets` | 与预期一致 | 通过 | `test/plugin.test.ts` |
 | 策略段落渲染 | 未配置时为空；自由模式仅用户文本；档位模式附自动生成清单 | 与预期一致 | 通过 | `test/presets.test.ts` |
@@ -32,7 +32,7 @@
 
 自动化已覆盖设置页与配置链路；下面两条依赖真实模型调用，留给用户按需确认（建议在本 worktree 的临时实例上跑）：
 
-- 临时实例：<http://127.0.0.1:53845/?token=e2etest>（dsh-e2e 一次性实例，端口动态分配；换机器/重启后用 `dsh-e2e status` 取当前 URL，用完 `dsh-e2e stop`）
+- 临时实例：<http://127.0.0.1:42538/?token=e2etest>（dsh-e2e 一次性实例，端口动态分配；换机器/重启后用 `dsh-e2e status` 取当前 URL，用完 `dsh-e2e stop`）
 
 | # | 场景 | 看哪里、看什么 |
 |---|------|---------------|

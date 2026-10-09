@@ -139,6 +139,9 @@ function validate(state: FormState): string | undefined {
 		if (hasProvider !== hasModel) {
 			return "自由模式的 Plan 目标需要同时填写 provider 与 model，或两者都留空。";
 		}
+		if (!hasProvider && state.planModel.reasoningEffort !== "") {
+			return "自由模式的 Plan 目标只填了思考强度——请补上 provider 与 model，或清空。";
+		}
 		return undefined;
 	}
 	if (state.presets.length === 0) return "档位模式下至少需要一条档位。";

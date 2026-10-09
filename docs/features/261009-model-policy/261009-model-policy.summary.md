@@ -20,7 +20,7 @@
 | 入口 | `src/index.ts`：`dsh:model-policy` 系统提示词段落（order 550）、上下文行追加 `preset: xx`、Plan 联动按 mode 选目标、`settings.configure({auto:false})` |
 | 浏览器半 | `src/client/index.ts` + `panel.tsx`（新）：`settings.section`「模型档位」页；`scripts/build-client.mjs` 构建 `lib/client.js` |
 | 工程 | `tsconfig.client.json`（新）、`package.json`（exports/files/scripts/`dsh.client`/devDeps）、`e2e/verify-policy-page.mjs` + `e2e/fixture/cordis.patch.yml`（新，可复现的种子配置）、`assets/`（设置页截图） |
-| 测试 | `test/config.test.ts`、`test/presets.test.ts`、`test/plugin.test.ts`（新）+ `test/tools.test.ts`（扩），共 29 例 |
+| 测试 | `test/config.test.ts`、`test/presets.test.ts`、`test/plugin.test.ts`（新）+ `test/tools.test.ts`（扩），共 30 例 |
 | 文档 | 双语 README 重写、`AGENTS.md` 地图与规范更新 |
 
 ## 关键设计决策
@@ -62,12 +62,15 @@
 | R2 | 切档位模式后遗留的 `planModel` 被当 error 每次保存刷日志 | 拆出 `warnings` 通道（`logger.warn`），该提示降级；错误只留给真正加载不了配置的情形 |
 | R3 | e2e 依赖未入库的 `.dsh-e2e-home/.../cordis.patch.yml`，且 playwright 路径硬编码 | 种子配置入库为 `e2e/fixture/cordis.patch.yml`，由 `dsh-e2e start --patch` 播种到 profile 用户层（见下条平台事实）；playwright/camoufox 路径改为 `DSH_E2E_PLAYWRIGHT` / `DSH_E2E_BROWSER` 可覆盖 |
 | — | `requireAgent` 文案固定写 `set_model:`、`settings.configure` 注释与 0.2.0-rc.2 事实不符、Plan 目标半填/`modelCatalog` 同步抛错未兜住 | 逐条修正 |
-| — | plan §10「上下文行出现 `preset: xx`」缺单测 | 夹具捕获 `systemPrompt.context`/`section` 贡献，新增用例断言含档位与 effort 的完整上下文行，以及未匹配档位时的降级输出 |
+| — | plan §10「上下文行出现 `preset: xx`」缺单测 | 夹具捕获 `systemPrompt.context`/`section` 贡献，新增用例断言含档位与 effort 的完整上下文行、未匹配档位的降级输出、无 agent 时为空、Plan Mode 后缀 |
+| 复核追加 | `planPreset` 悬空在自由模式下按 error 每次刷；未知 `reasoningEffort` 按 error（实际只是退回模型默认）；自由模式只填思考强度仍被静默丢弃 | 前者按 mode 分流（档位模式 error / 自由模式 warn），后者降 warn，面板补"只填了思考强度"的校验 |
+| 复核追加 | `scripts/dev-worktree.sh` 没带 `--patch`，照 README 做人工验证会得到未播种实例 | 脚本补上种子参数 |
+| 复核追加 | e2e 断言值等于种子/上轮残留时会假绿；成功的提示靠固定 sleep 等待，宿主写回慢时闪红 | 探针值改为每轮唯一的 `probe-${Date.now()}`，成功提示改为 `waitForFunction` 轮询（同时异步等待写回完成） |
 
 ## 验证结果
 
 - `npm run check`（宿主 + 浏览器半两份 tsc）通过；
-- `npm test` 29/29 通过；
+- `npm test` 30/30 通过；
 - `npm run build` 产出 `dist/src/**` 与 `lib/client.js`（`node --check` 通过）；
 - `dsh-e2e run e2e/verify-policy-page.mjs` 22/22 通过（wipe 后冷启动一次 + 原地复跑一次均全绿）：GUI 无 pageerror/console.error、设置页注册并解析 `set-model` 命名空间、经页面编辑保存（连续两次，验证 revision 续期）后刷新仍持久化、自由模式 Plan 目标半填被拦；
 - 额外实测：把两份档位的 YAML 直接写进 profile patch，设置页正确渲染（证明手写配置与设置页两条路都通）。

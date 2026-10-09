@@ -73,7 +73,8 @@ test("resolveConfig: reports every unusable preset and keeps the rest", () => {
 	assert.equal(config.presets[1]?.reasoningEffort, undefined);
 	assert.ok(config.problems.some((problem) => problem.includes('duplicate preset id "daily"')));
 	assert.ok(config.problems.some((problem) => problem.includes("id, provider and model are all required")));
-	assert.ok(config.problems.some((problem) => problem.includes('unknown reasoningEffort "ludicrous"')));
+	// A typo'd effort falls back to the model default, so the preset stays usable: warn, not error.
+	assert.ok(config.warnings.some((warning) => warning.includes('unknown reasoningEffort "ludicrous"')));
 });
 
 test("resolveConfig: preset mode without presets reports, free mode ignores them silently", () => {
@@ -107,6 +108,14 @@ test("resolveConfig: plan target validated against the mode", () => {
 	// Leftover planModel after switching modes is a legitimate state, not a broken config.
 	assert.deepEqual(ignoredPlanModel.problems, []);
 	assert.ok(ignoredPlanModel.warnings.some((warning) => warning.includes("planModel is unused in preset mode")));
+});
+
+test("resolveConfig: a dangling planPreset is only fatal where it would switch", () => {
+	// In free mode the settings page hides the field, so a leftover must not
+	// shout at the user on every save.
+	const free = resolveConfig({ mode: "free", planPreset: "deep" });
+	assert.deepEqual(free.problems, []);
+	assert.ok(free.warnings.some((warning) => warning.includes('planPreset "deep" matches no declared preset')));
 });
 
 test("resolveConfig: allowedProviders also constrains presets", () => {

@@ -41,6 +41,9 @@ page.on("console", (message) => {
 	if (message.type() === "error") consoleErrors.push(message.text());
 });
 
+/** Per-run probe values: matching the seed (or a previous run) must not pass. */
+const PROBE = `probe-${Date.now()}`;
+
 const DISMISS_LABELS = ["Configure later", "Continue", "Got it", "Skip", "Close"];
 
 /** Dismiss first-run dialogs (Preview Notice, API-key onboarding) that block the shell. */
@@ -68,6 +71,23 @@ async function openModelPolicyPage() {
 	await page.waitForTimeout(2000);
 	await page.getByRole("button", { name: "模型档位" }).click();
 	await page.waitForTimeout(1500);
+}
+
+/**
+ * Wait for a transient note to show up. A save resolves only after the host
+ * re-composed the profile, so its latency varies; a fixed sleep is flaky.
+ */
+async function waitForNote(text, timeout = 8000) {
+	try {
+		await page.waitForFunction(
+			(needle) => (document.body.innerText || "").includes(needle),
+			text,
+			{ timeout }
+		);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** First non-empty option value of a select, as a usable choice. */
@@ -105,21 +125,20 @@ const provider = await firstOption(providerSelect);
 check(Boolean(provider), `catalog offered a route (${provider ?? "none"})`);
 
 const prompt = page.getByPlaceholder(/例如：规划与架构设计/);
-await page.getByPlaceholder("日常执行").first().fill("E2E 日常 v2");
-await prompt.fill("e2e 探针 v2：规划先切 deep。");
+await page.getByPlaceholder("日常执行").first().fill(PROBE);
+await prompt.fill(`e2e 探针 ${PROBE}：规划先切 deep。`);
 
 await page.getByRole("button", { name: "保存并生效" }).click();
-await page.waitForTimeout(2000);
+check(await waitForNote("已保存并热生效"), "save reported success");
 const afterSave = await page.evaluate(() => document.body.innerText || "");
-check(afterSave.includes("已保存并热生效"), "save reported success");
 check(!afterSave.includes("保存失败"), "save reported no failure");
 
 // A second save proves the page picked up the revision the first write bumped:
 // a stale revision would be refused as a conflict.
+await page.waitForTimeout(2700); // let the first note self-clear, so this one proves itself
 await page.getByRole("button", { name: "保存并生效" }).click();
-await page.waitForTimeout(700); // the first save's success note self-clears after 2.5s
+check(await waitForNote("已保存并热生效"), "second save accepted (revision refreshed)");
 const afterSecondSave = await page.evaluate(() => document.body.innerText || "");
-check(afterSecondSave.includes("已保存并热生效"), "second save accepted (revision refreshed)");
 check(!afterSecondSave.includes("保存失败"), "second save reported no failure");
 
 console.log("=== STAGE 4: the value survives a reload ===");
@@ -127,9 +146,9 @@ await page.reload({ waitUntil: "domcontentloaded" });
 await page.waitForTimeout(9000);
 await openModelPolicyPage();
 const savedName = await page.getByPlaceholder("日常执行").first().inputValue();
-check(savedName === "E2E 日常 v2", `preset edit persisted after reload (got "${savedName}")`);
+check(savedName === PROBE, `preset edit persisted after reload (got "${savedName}")`);
 const savedPrompt = await page.getByPlaceholder(/例如：规划与架构设计/).inputValue();
-check(savedPrompt === "e2e 探针 v2：规划先切 deep。", "policy prompt persisted after reload");
+check(savedPrompt === `e2e 探针 ${PROBE}：规划先切 deep。`, "policy prompt persisted after reload");
 
 console.log("=== STAGE 5: the free-mode Plan target guard ===");
 // A half-filled Plan target would be dropped by the host while the page claims
@@ -145,18 +164,16 @@ check(halfFilled.includes("需要同时填写 provider 与 model"), "half-filled
 check(!halfFilled.includes("已保存并热生效"), "half-filled Plan target reported no success");
 
 await planProvider.fill("");
+await page.waitForTimeout(2700); // clear the refusal note first
 await page.getByRole("button", { name: "保存并生效" }).click();
-await page.waitForTimeout(1500);
-const emptied = await page.evaluate(() => document.body.innerText || "");
-check(emptied.includes("已保存并热生效"), "both Plan target fields empty saves as unset");
+check(await waitForNote("已保存并热生效"), "both Plan target fields empty saves as unset");
 
 // Leave the profile on the mode the fixture seeds, so a rerun starts clean.
 await page.getByRole("radio").nth(1).check();
 await page.waitForTimeout(500);
+await page.waitForTimeout(2700);
 await page.getByRole("button", { name: "保存并生效" }).click();
-await page.waitForTimeout(1500);
-const restored = await page.evaluate(() => document.body.innerText || "");
-check(restored.includes("已保存并热生效"), "preset mode restored after the guard run");
+check(await waitForNote("已保存并热生效"), "preset mode restored after the guard run");
 
 console.log("=== RESULT ===");
 check(pageErrors.length === 0, `no pageerror after full run (${pageErrors.length})`);

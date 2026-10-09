@@ -187,14 +187,14 @@ function text(value: unknown): string {
 	return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeEffort(value: unknown, label: string, problems: string[]): ReasoningEffort | undefined {
+function normalizeEffort(value: unknown, label: string, warnings: string[]): ReasoningEffort | undefined {
 	if (value === undefined || value === null || value === "") return undefined;
 	if (isReasoningEffort(value)) return value;
-	problems.push(`${label}: unknown reasoningEffort "${String(value)}"; falling back to the model default`);
+	warnings.push(`${label}: unknown reasoningEffort "${String(value)}"; falling back to the model default`);
 	return undefined;
 }
 
-function normalizePlanModel(raw: unknown, problems: string[]): ResolvedPlanModel | undefined {
+function normalizePlanModel(raw: unknown, problems: string[], warnings: string[]): ResolvedPlanModel | undefined {
 	if (raw === undefined || raw === null || typeof raw !== "object") return undefined;
 	const candidate = raw as Record<string, unknown>;
 	const provider = text(candidate.provider);
@@ -205,11 +205,16 @@ function normalizePlanModel(raw: unknown, problems: string[]): ResolvedPlanModel
 		problems.push("planModel: provider and model are both required; ignoring it");
 		return undefined;
 	}
-	const reasoningEffort = normalizeEffort(candidate.reasoningEffort, "planModel", problems);
+	const reasoningEffort = normalizeEffort(candidate.reasoningEffort, "planModel", warnings);
 	return { provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) };
 }
 
-function normalizePresets(raw: unknown, allowedProviders: string[], problems: string[]): ResolvedModelPreset[] {
+function normalizePresets(
+	raw: unknown,
+	allowedProviders: string[],
+	problems: string[],
+	warnings: string[]
+): ResolvedModelPreset[] {
 	if (!Array.isArray(raw)) return [];
 
 	const presets: ResolvedModelPreset[] = [];
@@ -241,7 +246,7 @@ function normalizePresets(raw: unknown, allowedProviders: string[], problems: st
 
 		const name = text(candidate.name);
 		const when = text(candidate.when);
-		const reasoningEffort = normalizeEffort(candidate.reasoningEffort, `${label} ("${id}")`, problems);
+		const reasoningEffort = normalizeEffort(candidate.reasoningEffort, `${label} ("${id}")`, warnings);
 
 		seen.add(id);
 		presets.push({
@@ -266,15 +271,19 @@ export function resolveConfig(raw: Partial<SetModelPluginConfig> | Record<string
 		? source.allowedProviders.map((entry) => text(entry)).filter((entry) => entry !== "")
 		: [];
 	const mode: ModelPolicyMode = source.mode === "preset" ? "preset" : "free";
-	const presets = normalizePresets(source.presets, allowedProviders, problems);
-	const planModel = normalizePlanModel(source.planModel, problems);
+	const presets = normalizePresets(source.presets, allowedProviders, problems, warnings);
+	const planModel = normalizePlanModel(source.planModel, problems, warnings);
 	const planPreset = text(source.planPreset) || undefined;
 
 	if (mode === "preset" && presets.length === 0) {
 		problems.push("mode is 'preset' but no usable presets are declared; the model tools cannot switch anything");
 	}
 	if (planPreset !== undefined && !presets.some((preset) => preset.id === planPreset)) {
-		problems.push(`planPreset "${planPreset}" matches no declared preset; Plan Mode will not switch models`);
+		const message = `planPreset "${planPreset}" matches no declared preset`;
+		// In free mode the settings page hides this field, so the user cannot
+		// clean it up from there; do not shout about a leftover every save.
+		if (mode === "preset") problems.push(`${message}; Plan Mode will not switch models`);
+		else warnings.push(`${message}; unused in free mode`);
 	}
 	if (mode === "preset" && planPreset === undefined && planModel !== undefined) {
 		warnings.push("planModel is unused in preset mode; declare planPreset instead");
