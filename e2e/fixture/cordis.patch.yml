@@ -40,7 +40,7 @@
         name: 深度攻坚
         when: 疑难排查、架构设计、复杂算法
         provider: deepseek-official
-        model: deepseek-pro
+        model: deepseek-v4-pro
         reasoningEffort: max
     policyPrompt: e2e 探针：规划先切 deep。
     planPreset: deep
