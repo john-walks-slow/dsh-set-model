@@ -2,9 +2,27 @@ import { Session, SessionSeq } from "@deepseek-ai/dsh-session";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { Context } from "@deepseek-ai/cordis";
+import { Config, type SetModelLiveConfig } from "../src/config.js";
 
 export function createMockSession(id: string = "test-session-1"): Session {
 	return Session.create(id as never);
+}
+
+/**
+ * Mirror the platform: `apply()` receives the schema-validated config, in which
+ * every volatile field is a live reference the Loader commits in place. Building
+ * the fixture through the real schema keeps tests honest about that shape.
+ */
+export function liveConfig(raw: Record<string, unknown> = {}): SetModelLiveConfig {
+	const validated = (
+		Config as unknown as {
+			"~standard": { validate(value: unknown): { value?: unknown; issues?: unknown } };
+		}
+	)["~standard"].validate(raw);
+	if (validated.issues !== undefined) {
+		throw new Error(`invalid test config: ${JSON.stringify(validated.issues)}`);
+	}
+	return validated.value as SetModelLiveConfig;
 }
 
 export function eventsOf(session: Session): SessionEvent[] {
@@ -134,12 +152,27 @@ export function createMockContext(): {
 			}
 		},
 		systemPrompt: {
-			section(_sec: any) {
+			// The prompt contributions are captured so tests can invoke the text
+			// functions the way the platform does on every assembly.
+			sections: [] as any[],
+			contexts: [] as any[],
+			section(sec: any) {
+				this.sections.push(sec);
 				return () => {};
 			},
-			context(_ctx: any) {
+			context(contribution: any) {
+				this.contexts.push(contribution);
 				return () => {};
 			}
+		},
+		settings: {
+			configure(_presentation: any, _owner?: any) {
+				return () => {};
+			}
+		},
+		effect(fn: () => unknown) {
+			const dispose = fn();
+			return typeof dispose === "function" ? dispose : () => {};
 		},
 		inject(deps: string[], cb: (injectedCtx: any) => void) {
 			cb(ctx);
@@ -176,6 +209,9 @@ export function createMockAgent(session: Session, ctx: Context, options: any = {
 			tools: {
 				register(tool: any) {
 					registeredTools.set(tool.name, tool);
+					return () => {
+						if (registeredTools.get(tool.name) === tool) registeredTools.delete(tool.name);
+					};
 				},
 				get(name: string) {
 					return registeredTools.get(name);

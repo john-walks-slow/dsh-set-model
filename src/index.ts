@@ -1,77 +1,141 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent, PreStepDecision } from "@deepseek-ai/dsh-agent";
 import type { UserMessage } from "@deepseek-ai/dsh-llm";
-// Pull optional settings type augmentation
+// Optional settings type augmentation, plus the Loader's `loader/volatile-update` declaration.
 import type {} from "@deepseek-ai/dsh-settings";
-import { Config, resolveConfig, type ResolvedSetModelConfig } from "./config.js";
+import type {} from "@deepseek-ai/cordis-plugin-loader";
+import { Config, snapshotConfig, type ResolvedSetModelConfig, type SetModelLiveConfig } from "./config.js";
 import {
 	applyModelSelection,
 	resolveCurrentSelection,
 	isPlanModeActive,
-	type ActiveModelSelection
+	type ActiveModelSelection,
+	type TargetModelSelection
 } from "./controller.js";
-import { setModelTool, listModelsTool } from "./tools.js";
+import { findPreset, matchPreset, presetToSelection, renderModelPolicySection } from "./presets.js";
+import { setModelTool, listModelsTool, switchPresetTool, listPresetsTool } from "./tools.js";
 
 export const name = "dsh-set-model";
 export const inject = ["tools", "llm", "agents", "sessionProjections", "tokenMeter", "agentDefaultModel", "systemPrompt"];
 export { Config };
 
-export const SETTINGS_NAMESPACE = "dsh-set-model";
+/** Model policy sits between PLAN_POLICY (500) and TEAM_POLICY (600). */
+const MODEL_POLICY_SECTION_NAME = "dsh:model-policy";
+const MODEL_POLICY_SECTION_ORDER = 550;
+
+type ToolFactory = (ctx: Context, live: () => ResolvedSetModelConfig) => ReturnType<typeof setModelTool>;
 
 interface SessionPlanTrackState {
 	planActive: boolean;
 	stashedNonPlanModel?: ActiveModelSelection;
 }
 
-export function apply(ctx: Context, initialConfig: Record<string, unknown> = {}) {
-	let currentConfig: ResolvedSetModelConfig = resolveConfig(initialConfig);
+interface PlanTarget {
+	selection: TargetModelSelection;
+	/** Human-readable route for logs. */
+	label: string;
+}
 
-	// 1. Settings integration: install settings namespace for Web Settings UI & dynamic reconfig
+/** The model Plan Mode should activate, resolved for the configured mode. */
+function resolvePlanTarget(config: ResolvedSetModelConfig): PlanTarget | undefined {
+	if (config.mode === "preset") {
+		if (config.planPreset === undefined) return undefined;
+		const preset = findPreset(config.presets, config.planPreset);
+		return preset === undefined
+			? undefined
+			: { selection: presetToSelection(preset), label: `preset ${preset.id} (${preset.provider}/${preset.model})` };
+	}
+	if (config.planModel === undefined) return undefined;
+	return {
+		selection: config.planModel,
+		label: `${config.planModel.provider}/${config.planModel.model}`
+	};
+}
+
+export function apply(ctx: Context, initialConfig: SetModelLiveConfig) {
+	// Every config field is volatile: the Loader commits a settings write into
+	// these references in place (emitting `loader/volatile-update`) instead of
+	// re-running apply, so the config is read per use, never snapshotted once.
+	const current = (): ResolvedSetModelConfig => snapshotConfig(initialConfig);
+
+	const reportProblems = (config: ResolvedSetModelConfig) => {
+		for (const problem of config.problems) {
+			ctx.logger?.error(`dsh-set-model: ${problem}`);
+		}
+		for (const warning of config.warnings) {
+			ctx.logger?.warn(`dsh-set-model: ${warning}`);
+		}
+	};
+	reportProblems(current());
+
+	// 1. Settings: declare this instance's page policy, exactly as the official
+	// settings pages do. The owner MUST be this entry's fiber — the injected
+	// child fiber would register a policy the Settings UI never reads.
 	ctx.inject(["settings"], (settingsCtx) => {
-		(settingsCtx as any).settings?.installSection(ctx, SETTINGS_NAMESPACE, Config, initialConfig, {
-			setSource: (source: any) => {
-				currentConfig = resolveConfig(source);
-			},
-			onChange: () => {}
-		});
+		settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber));
 	});
 
-	// 2. Dynamic Runtime Context: inject active model into tail runtime-context snapshot (cache-safe)
+	// 2. Model policy: a static system prompt section. It changes only with the
+	// configuration, so the prompt prefix stays cacheable.
+	ctx.systemPrompt.section({
+		name: MODEL_POLICY_SECTION_NAME,
+		order: MODEL_POLICY_SECTION_ORDER,
+		text: () => renderModelPolicySection(current())
+	});
+
+	// 3. Dynamic Runtime Context: active model and preset in the tail snapshot (cache-safe)
 	ctx.systemPrompt.context({
 		name: "dsh:active_model_context",
 		order: 10,
 		text: (context) => {
 			if (!context.agent) return "";
-			const current = resolveCurrentSelection(context.agent, ctx);
-			const effort = current.reasoningEffort ? ` · reasoning: ${current.reasoningEffort}` : "";
+			const config = current();
+			const selection = resolveCurrentSelection(context.agent, ctx);
+			const preset = matchPreset(config.presets, selection);
+			const effort = selection.reasoningEffort ? ` · reasoning: ${selection.reasoningEffort}` : "";
+			const presetLabel = preset ? ` · preset: ${preset.id}` : "";
 			const planStatus = isPlanModeActive(context.agent, ctx) ? " [Plan Mode Active]" : "";
-			return `[Current active model: ${current.provider}/${current.model}${effort}${planStatus}]`;
+			return `[Current active model: ${selection.provider}/${selection.model}${effort}${presetLabel}${planStatus}]`;
 		}
 	});
 
-	// 3. Register agent tools for root agents
-	const registeredAgents = new WeakSet<Agent>();
-	const registerToolsForAgent = (agent: Agent) => {
-		if (registeredAgents.has(agent)) return;
-		if (!ctx.agents.roots().includes(agent)) return;
-		registeredAgents.add(agent);
+	// 4. Model tools for root agents. Which tools exist depends on mode /
+	// enableAgentTools, so the set is rebuilt whenever the live values change.
+	const agentTools = new WeakMap<Agent, Array<() => void>>();
 
-		if (currentConfig.enableAgentTools) {
-			agent.ctx.tools.register(setModelTool(ctx, currentConfig));
-			agent.ctx.tools.register(listModelsTool(ctx, currentConfig));
-		}
+	const registerToolsForAgent = (agent: Agent) => {
+		if (!ctx.agents.roots().includes(agent)) return;
+		for (const dispose of agentTools.get(agent) ?? []) dispose();
+		agentTools.delete(agent);
+
+		const config = current();
+		if (!config.enableAgentTools) return;
+
+		const factories: ToolFactory[] =
+			config.mode === "preset" ? [switchPresetTool, listPresetsTool] : [setModelTool, listModelsTool];
+		agentTools.set(
+			agent,
+			factories.map((factory) => agent.ctx.tools.register(factory(ctx, current)))
+		);
+	};
+
+	const syncTools = () => {
+		for (const root of ctx.agents.roots()) registerToolsForAgent(root);
 	};
 
 	ctx.on("agent/created", ({ agent }: { agent: Agent }) => {
 		registerToolsForAgent(agent);
-		// agent/created is a serial listener: dsh-agent requires undefined | Promise<undefined>
+		// agent/created is a serial listener: it must resolve to undefined.
 		return undefined;
 	});
-	for (const root of ctx.agents.roots()) {
-		registerToolsForAgent(root);
-	}
+	syncTools();
 
-	// 3. Plan Mode lifecycle tracking: auto-stash & restore model
+	ctx.on("loader/volatile-update", () => {
+		reportProblems(current());
+		syncTools();
+	});
+
+	// 5. Plan Mode lifecycle tracking: auto-stash & restore model
 	const sessionPlanStates = new WeakMap<any, SessionPlanTrackState>();
 
 	ctx.on(
@@ -99,17 +163,12 @@ export function apply(ctx: Context, initialConfig: Record<string, unknown> = {})
 						track.stashedNonPlanModel = resolveCurrentSelection(agent, ctx);
 						track.planActive = true;
 
-						if (currentConfig.planModel) {
+						const config = current();
+						const target = resolvePlanTarget(config);
+						if (target !== undefined) {
 							try {
-								await applyModelSelection(
-									agent,
-									ctx,
-									currentConfig.planModel,
-									currentConfig.allowedProviders
-								);
-								ctx.logger?.info(
-									`dsh-set-model: entered Plan Mode, auto-switched to plan model: ${currentConfig.planModel.provider}/${currentConfig.planModel.model}`
-								);
+								await applyModelSelection(agent, ctx, target.selection, config.allowedProviders);
+								ctx.logger?.info(`dsh-set-model: entered Plan Mode, auto-switched to ${target.label}`);
 							} catch (err) {
 								ctx.logger?.warn(
 									`dsh-set-model: failed to auto-switch to plan model: ${err instanceof Error ? err.message : String(err)}`
@@ -123,9 +182,10 @@ export function apply(ctx: Context, initialConfig: Record<string, unknown> = {})
 						track.planActive = false;
 						track.stashedNonPlanModel = undefined;
 
-						if (currentConfig.autoRestorePlanModel && stashed) {
+						const config = current();
+						if (config.autoRestorePlanModel && stashed) {
 							try {
-								await applyModelSelection(agent, ctx, stashed, currentConfig.allowedProviders);
+								await applyModelSelection(agent, ctx, stashed, config.allowedProviders);
 								ctx.logger?.info(
 									`dsh-set-model: exited Plan Mode, auto-restored previous model: ${stashed.provider}/${stashed.model}`
 								);
@@ -143,7 +203,9 @@ export function apply(ctx: Context, initialConfig: Record<string, unknown> = {})
 		}
 	);
 
-	ctx.logger?.info("dsh-set-model: initialized successfully");
+	ctx.logger?.info(
+		`dsh-set-model: initialized in ${current().mode} mode (${current().presets.length} preset(s))`
+	);
 }
 
 export default {

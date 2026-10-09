@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { apply } from "../src/index.js";
-import { createMockContext, createMockSession, createMockAgent, eventsOf } from "./helpers.js";
+import { createMockContext, createMockSession, createMockAgent, eventsOf, liveConfig } from "./helpers.js";
 
 test("Plan Mode Auto-Transition: entering Plan Mode auto-switches model, exiting restores", async () => {
 	const mock = createMockContext();
@@ -18,14 +18,17 @@ test("Plan Mode Auto-Transition: entering Plan Mode auto-switches model, exiting
 	};
 
 	// Apply plugin with planModel configuration
-	apply(mock.ctx, {
-		planModel: {
-			provider: "deepseek",
-			model: "deepseek-reasoner",
-			reasoningEffort: "high"
-		},
-		autoRestorePlanModel: true
-	});
+	apply(
+		mock.ctx,
+		liveConfig({
+			planModel: {
+				provider: "deepseek",
+				model: "deepseek-reasoner",
+				reasoningEffort: "high"
+			},
+			autoRestorePlanModel: true
+		})
+	);
 
 	assert.ok(preStepHook, "pre-step hook should be registered");
 

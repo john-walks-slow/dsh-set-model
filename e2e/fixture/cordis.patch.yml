@@ -1,0 +1,49 @@
+# e2e 种子配置：dsh-e2e 最小 profile 的用户 patch 层。
+# 用法: dsh-e2e start --wait-ready --patch e2e/fixture/cordis.patch.yml
+# 主页的 welcomeNoticeVersion / permission / agent-default-model 是宿主默认入口，
+# e2e 最小 profile 的用户 patch 层（默认空，按需覆盖行）
+- id: ui-settings-general
+  name: "@deepseek-ai/dsh-client-ui-settings-general"
+  config:
+    welcomeNoticeVersion: 2026-09-28.1
+- id: permission
+  name: "@deepseek-ai/dsh-permission-presets"
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: danger-full-access
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: cpa
+    model: omni
+- id: set-model
+  name: dsh-set-model
+  config:
+    mode: preset
+    presets:
+      - id: daily
+        name: E2E 日常
+        when: 常规实现、修改、测试
+        provider: deepseek-official
+        model: deepseek-flash
+        reasoningEffort: low
+      - id: deep
+        name: 深度攻坚
+        when: 疑难排查、架构设计、复杂算法
+        provider: deepseek-official
+        model: deepseek-pro
+        reasoningEffort: max
+    policyPrompt: e2e 探针：规划先切 deep。
+    planPreset: deep
+    autoRestorePlanModel: true
+    enableAgentTools: true
+    allowedProviders: []

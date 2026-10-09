@@ -1,23 +1,27 @@
 {
   "name": "dsh-set-model",
   "version": "0.1.0",
-  "description": "Dynamic model and reasoning-effort switching for DeepSeek Harness (DSH): set_model / list_models agent tools, plan-mode auto-transition, provider whitelist and context-window guards, active-model runtime context injection. dsh-set-model：为 DSH 提供动态模型与思考深度切换——Agent 自主调模工具（set_model / list_models）、Plan 模式自动升降级、Provider 白名单与上下文窗口护栏、活跃模型运行时上下文注入。",
+  "description": "Model policy for DeepSeek Harness (DSH): set_model / list_models agent tools, preset mode with switch_preset / list_presets, a configurable stage-to-model system prompt, plan-mode auto-transition, provider whitelist and context-window guards, active-model runtime context injection, and a bundled Web settings page. dsh-set-model：为 DSH 提供模型策略——Agent 自主调模工具（自由模式 set_model/list_models，档位模式 switch_preset/list_presets）、可配置的「阶段→模型」系统提示词、Plan 模式自动升降级、Provider 白名单与上下文窗口护栏、活跃模型运行时上下文注入，以及插件自带设置页。",
   "type": "module",
   "main": "./dist/src/index.js",
   "exports": {
     ".": "./dist/src/index.js",
+    "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "dist/src",
+    "lib",
+    "assets",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "check": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-client.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "test": "tsc -p tsconfig.json && node --test dist/test/*.test.js",
     "prepare": "npm run build",
     "prepublishOnly": "npm test",
@@ -26,6 +30,13 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
     }
   },
   "keywords": [
@@ -34,14 +45,21 @@
     "deepseek-harness",
     "model-switching",
     "model-selection",
+    "model-policy",
+    "model-preset",
     "reasoning-effort",
+    "system-prompt",
+    "settings-page",
     "plan-mode",
     "llm",
     "agent-tools",
     "模型切换",
-    "模型选择",
+    "模型策略",
+    "模型档位",
+    "阶段提示词",
     "思考深度",
     "推理",
+    "设置页",
     "规划模式"
   ],
   "license": "MIT",
@@ -75,12 +93,17 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.5",
+    "@deepseek-ai/cosmokit": "1.8.5",
     "@deepseek-ai/dsh-agent": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-session": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-settings": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-tools": "^0.2.0-rc.2",
     "@types/node": "^22.20.1",
+    "@types/react": "^18.3.12",
+    "esbuild": "^0.28.2",
+    "react": "^18.3.1",
     "typescript": "^5.9.3"
   }
 }
