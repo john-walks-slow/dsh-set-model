@@ -13,6 +13,7 @@
 | `npm test` | 全部单测通过（含以真实 `Config["~standard"].validate()` 构造的 volatile 夹具） | 30/30 通过 | 通过 | `node --test dist/test/*.test.js` |
 | `npm run build` | 产出 `dist/src/**` 与 `lib/client.js`，且后者语法合法 | 构建成功，`node --check lib/client.js` 通过 | 通过 | `scripts/build-client.mjs` 内置语法检查 |
 | `dsh-e2e run e2e/verify-policy-page.mjs` | GUI 启动无 pageerror/console.error；设置页注册、读写、连续保存、刷新后持久化；自由模式 Plan 目标半填与只填思考强度被拦 | 22/22 断言通过 | 通过 | 见下方「e2e 覆盖」 |
+| 双版本类型检查（`0.1.7-rc.2`） | 宿主半与浏览器半 tsc 均通过；30 例单测在该版本类型下同样通过 | 0 错误 | 通过 | 临时工程把 `devDependencies` 的 `@deepseek-ai/dsh-*` 钉到 `0.1.7-rc.2` 后 `tsc -p tsconfig.json` / `-p tsconfig.client.json` + `node --test` |
 | 配置诊断 | 重复 id / 缺 provider / 无效 planPreset 只记日志、跳过该条，插件照常加载 | 与预期一致 | 通过 | `test/config.test.ts` |
 | 模式分支 | 自由模式只注册 `set_model`/`list_models`；档位模式只注册 `switch_preset`/`list_presets` | 与预期一致 | 通过 | `test/plugin.test.ts` |
 | 策略段落渲染 | 未配置时为空；自由模式仅用户文本；档位模式附自动生成清单 | 与预期一致 | 通过 | `test/presets.test.ts` |
