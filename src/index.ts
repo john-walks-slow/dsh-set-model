@@ -1,8 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent, PreStepDecision } from "@deepseek-ai/dsh-agent";
 import type { UserMessage } from "@deepseek-ai/dsh-llm";
-// Pull optional settings type augmentation
-import type {} from "@deepseek-ai/dsh-settings";
 import { Config, resolveConfig, type ResolvedSetModelConfig } from "./config.js";
 import {
 	applyModelSelection,
@@ -16,27 +14,17 @@ export const name = "dsh-set-model";
 export const inject = ["tools", "llm", "agents", "sessionProjections", "tokenMeter", "agentDefaultModel", "systemPrompt"];
 export { Config };
 
-export const SETTINGS_NAMESPACE = "dsh-set-model";
-
 interface SessionPlanTrackState {
 	planActive: boolean;
 	stashedNonPlanModel?: ActiveModelSelection;
 }
 
 export function apply(ctx: Context, initialConfig: Record<string, unknown> = {}) {
-	let currentConfig: ResolvedSetModelConfig = resolveConfig(initialConfig);
+	// The loader re-applies this plugin on every Settings/entry change, so the
+	// resolved config is a per-application constant.
+	const currentConfig: ResolvedSetModelConfig = resolveConfig(initialConfig);
 
-	// 1. Settings integration: install settings namespace for Web Settings UI & dynamic reconfig
-	ctx.inject(["settings"], (settingsCtx) => {
-		(settingsCtx as any).settings?.installSection(ctx, SETTINGS_NAMESPACE, Config, initialConfig, {
-			setSource: (source: any) => {
-				currentConfig = resolveConfig(source);
-			},
-			onChange: () => {}
-		});
-	});
-
-	// 2. Dynamic Runtime Context: inject active model into tail runtime-context snapshot (cache-safe)
+	// 1. Dynamic Runtime Context: inject active model into tail runtime-context snapshot (cache-safe)
 	ctx.systemPrompt.context({
 		name: "dsh:active_model_context",
 		order: 10,
@@ -49,7 +37,7 @@ export function apply(ctx: Context, initialConfig: Record<string, unknown> = {})
 		}
 	});
 
-	// 3. Register agent tools for root agents
+	// 2. Register agent tools for root agents
 	const registeredAgents = new WeakSet<Agent>();
 	const registerToolsForAgent = (agent: Agent) => {
 		if (registeredAgents.has(agent)) return;

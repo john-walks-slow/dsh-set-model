@@ -11,7 +11,7 @@ Switch to deep reasoning for hard problems, stay on the cost-effective tier for 
 
 ## What the model sees
 
-Via `systemPrompt.context`, the plugin appends one line with the current active model to the tail of every step's Runtime Context snapshot (cache-safe append; the model can check itself at any time without calling a tool):
+Via `systemPrompt.context`, the plugin contributes the current active model line to the Runtime Context snapshot assembled on every step. That snapshot is committed only when its text changes, so a stable turn keeps a single cache-safe append (the model can check itself at any time without calling a tool):
 
 ```
 [Current active model: deepseek/deepseek-chat · reasoning: low]
