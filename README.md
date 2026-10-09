@@ -246,3 +246,9 @@ git push --follow-tags
 ```
 
 发布后 `npm view dsh-set-model version` 复验。批量发多个包时，在指纹页勾选“5 分钟内同 IP 不再挑战”，一次指纹即可连发。
+
+> **发布后的暂存/扫描窗口（2026-10 起 npm 行为）**：`PUBLISHED_OK` 只是 PUT 被接受，版本随后进入暂存/扫描态，
+> 期间 `npm view` 仍显示旧版本、`/<pkg>/<version>` 与 tarball URL 都是 404，对**同一版本**重发会报
+> 409 `Cannot publish over previously staged version`。实测约 5 分钟后自动 promote（`0.2.0`：PUT 15:27:43Z → 上线 15:32:33Z）。
+> 遇到 409 不要改版本号，等待并复查 registry 即可。落库判定用 `npm view dsh-set-model@<version> dist.shasum`
+> 与本地 tgz 的 `sha1sum` 比对：一致即上线产物与本地产物字节相同。
