@@ -4,3 +4,4 @@ dist/
 .dsh-e2e-home/
 .mnemon/
 lib/
+.worktrees/
