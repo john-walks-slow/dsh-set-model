@@ -107,7 +107,8 @@ dsh plugin --profile web add github:john-walks-slow/dsh-set-model
 ## 权限与兼容
 
 - **零直接副作用**：无外部服务、无插件自身网络请求（模型路由与能力查询均经由 DSH 核心 `llm` 服务）、无直接文件系统写入；仅通过会话事件 API 写入 `model/selection` 事件（由 DSH 会话系统落盘）并注入一行 Runtime Context
-- **依赖**：`@deepseek-ai/cordis` 4.0.2 / `@deepseek-ai/dsh-agent`、`dsh-llm`、`dsh-session`、`dsh-tools` 0.1.2-rc.1（与 dsh 0.1.2-rc.1 锁定版本对齐）、`zod` ^3.24.2；Node ≥ 22.5
+- **宿主版本要求**：DSH `^0.1.7-rc.2 || ^0.2.0-rc.1`（0.1.2~0.1.6 会得到明确的"插件与 dsh 版本不兼容"安装提示，请升级 DSH）
+- **依赖声明**：DSH 运行时包（`cordis`、`dsh-agent`、`dsh-llm`、`dsh-session`、`dsh-tools`，以及可选的 `dsh-settings`）全部声明为 `peerDependencies`——DSH 的模块解析层据此把插件内的 `@deepseek-ai/*` import 路由到**宿主自带副本**，插件绝不携带、也不 hoist 这些包的副本；唯一运行时依赖是纯 schema 库 `@deepseek-ai/schemastery`。Node ≥ 22.5
 - **失败降级**：Plan 模式自动切换失败只 warn 不打断 step；工具校验失败向 Agent 返回明确错误，不污染会话状态
 
 ## 本地开发

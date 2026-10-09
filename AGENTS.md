@@ -17,5 +17,5 @@
 ## 开发规范（dev-dsh-plugin）
 
 - 编译与检查：`npm run check`（`tsc --noEmit`）→ `npm test` → `npm run build`
-- 依赖声明：`package.json` 必须显式声明所有 `@deepseek-ai/*` 依赖，且本地执行 `npm install`
-- 平台 API 以 `/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/` 的 `.d.ts` 为准
+- **依赖声明（踩过，issue #1）**：DSH 运行时包（`@deepseek-ai/cordis`、`dsh-agent`、`dsh-llm`、`dsh-session`、`dsh-tools`…）必须声明在 `peerDependencies`，**绝不能**放 `dependencies`。宿主 `dsh-app-boot` 的模块解析层只把 peerDependencies 中的包名路由到宿主自带副本；写进 `dependencies` 会让 pnpm 把旧副本 hoist 进 profile，顶掉宿主单例，导致 typert 注册失败、会话列表消失（报错完全不指向本插件）。本地编译/测试所需的同版本副本放 `devDependencies`；纯叶子库（`@deepseek-ai/schemastery`）可留在 `dependencies`
+- 平台 API 以 `/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/` 的 `.d.ts` 为准；宿主版本切换时同步 `peerDependencies` 区间与 `devDependencies` 版本，并按 issue #1 的方式验证（`npm run check` + 0.2.x/0.1.7 双版本）

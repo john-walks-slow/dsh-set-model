@@ -107,7 +107,8 @@ dsh plugin --profile web add github:john-walks-slow/dsh-set-model
 ## Permissions & compatibility
 
 - **No direct side effects**: no external services, no network requests from the plugin itself (model routing and capability queries all go through the DSH core `llm` service), no direct filesystem writes; it only appends a `model/selection` event via the session event API (persisted by the DSH session system) and injects one Runtime Context line
-- **Dependencies**: `@deepseek-ai/cordis` 4.0.2 / `@deepseek-ai/dsh-agent`, `dsh-llm`, `dsh-session`, `dsh-tools` 0.1.2-rc.1 (aligned with dsh 0.1.2-rc.1 locked versions), `zod` ^3.24.2; Node ≥ 22.5
+- **Host version requirement**: DSH `^0.1.7-rc.2 || ^0.2.0-rc.1` (on 0.1.2–0.1.6 the installer reports an explicit plugin/dsh version incompatibility; upgrade DSH)
+- **Dependency declaration**: every DSH runtime package (`cordis`, `dsh-agent`, `dsh-llm`, `dsh-session`, `dsh-tools`, plus optional `dsh-settings`) is declared as a `peerDependency`, so the DSH module resolver routes the plugin's `@deepseek-ai/*` imports to the **host-provided copies** — the plugin never ships or hoists its own copies of them; the only runtime dependency is the leaf schema library `@deepseek-ai/schemastery`. Node ≥ 22.5
 - **Failure degradation**: a failed Plan Mode auto-switch only warns and never breaks the step; tool validation failures return a clear error to the agent without polluting session state
 
 ## Local development

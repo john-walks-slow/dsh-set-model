@@ -64,6 +64,8 @@ export function apply(ctx: Context, initialConfig: Record<string, unknown> = {})
 
 	ctx.on("agent/created", ({ agent }: { agent: Agent }) => {
 		registerToolsForAgent(agent);
+		// agent/created is a serial listener: dsh-agent requires undefined | Promise<undefined>
+		return undefined;
 	});
 	for (const root of ctx.agents.roots()) {
 		registerToolsForAgent(root);
