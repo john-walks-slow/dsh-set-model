@@ -53,7 +53,7 @@ With nothing configured the section is empty and leaves no trace in the prompt.
 
 ## What the model sees
 
-Via `systemPrompt.context`, the plugin appends one line with the current active model (and preset) to the tail of every step's Runtime Context snapshot (cache-safe append; the model can check itself at any time without calling a tool):
+Via `systemPrompt.context`, the plugin contributes the current active model (and preset) line to the Runtime Context snapshot assembled on every step. That snapshot is committed only when its text changes, so a stable turn keeps a single cache-safe append (the model can check itself at any time without calling a tool):
 
 ```
 [Current active model: deepseek/deepseek-chat · reasoning: low · preset: daily]

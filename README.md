@@ -53,7 +53,7 @@ policyPrompt: |
 
 ## 模型看到什么
 
-插件通过 `systemPrompt.context` 在每个 step 的 Runtime Context 快照尾部注入一行当前活跃模型（cache-safe 追加，模型随时自查、无需调用工具）：
+插件通过 `systemPrompt.context` 把当前活跃模型注册进每个 step 组装的 Runtime Context 快照（该快照仅在文本变化时才追加新的一条，内容相同则复用上一条，因此稳定轮次里只落一条 cache-safe 追加；模型随时自查、无需调用工具）：
 
 ```
 [Current active model: deepseek/deepseek-chat · reasoning: low · preset: daily]

@@ -18,7 +18,7 @@ export interface TargetModelSelection {
  * Resolve the current effective model selection for an agent session.
  */
 export function resolveCurrentSelection(agent: Agent, ctx: Context): ActiveModelSelection {
-	// 1. Check session projection if available
+	// 1. Pending selection recorded by the GUI model picker or a set_model call
 	const projectionState = (ctx as any).sessionProjections?.stateOf(agent.session, "modelSelection");
 	if (projectionState?.pending) {
 		return {
@@ -27,16 +27,9 @@ export function resolveCurrentSelection(agent: Agent, ctx: Context): ActiveModel
 			...(projectionState.pending.reasoningEffort ? { reasoningEffort: projectionState.pending.reasoningEffort } : {})
 		};
 	}
-	if (projectionState?.lastUsed) {
-		return {
-			provider: projectionState.lastUsed.provider,
-			model: projectionState.lastUsed.model,
-			...(projectionState.lastUsed.reasoningEffort ? { reasoningEffort: projectionState.lastUsed.reasoningEffort } : {})
-		};
-	}
 
-	// 2. Check logged session request header
-	const loggedHeader = agent.session.requestHeader?.();
+	// 2. Route of the last logged request
+	const loggedHeader = agent.session.requestHeader();
 	if (loggedHeader?.config) {
 		const cfg = loggedHeader.config;
 		return {
@@ -48,7 +41,7 @@ export function resolveCurrentSelection(agent: Agent, ctx: Context): ActiveModel
 		};
 	}
 
-	// 3. Fallback to default model service
+	// 3. Deployment default model service
 	const defaultModel = (ctx as any).agentDefaultModel?.currentSelection?.();
 	if (defaultModel) {
 		return {
@@ -58,11 +51,11 @@ export function resolveCurrentSelection(agent: Agent, ctx: Context): ActiveModel
 		};
 	}
 
-	// 4. Fallback to agent options
+	// 4. Agent options: a fresh agent that has not sent a request yet
 	return {
-		provider: (agent as any).options?.provider ?? "unknown",
-		model: (agent as any).options?.model ?? "unknown",
-		...((agent as any).options?.reasoningEffort ? { reasoningEffort: String((agent as any).options.reasoningEffort) } : {})
+		provider: agent.options?.provider ?? "unknown",
+		model: agent.options?.model ?? "unknown",
+		...(agent.options?.reasoningEffort ? { reasoningEffort: String(agent.options.reasoningEffort) } : {})
 	};
 }
 
@@ -111,24 +104,15 @@ export async function applyModelSelection(
 		throw new Error(`Model validation failed for ${targetProvider}/${targetModel}: ${error?.message || String(error)}`);
 	}
 
-	// 3. Token pressure guard against context window
-	if ((ctx as any).tokenMeter && (ctx as any).llm?.resolveModelInfo) {
-		try {
-			const modelInfo = await (ctx as any).llm.resolveModelInfo(resolved.provider, resolved.model);
-			if (modelInfo?.context?.contextWindow) {
-				const measurement = (ctx as any).tokenMeter.measure(agent.session);
-				if (measurement && measurement.totalTokens > modelInfo.context.contextWindow) {
-					throw new Error(
-						`Current session token pressure (${measurement.totalTokens} tokens) exceeds target model context window (${modelInfo.context.contextWindow} tokens). ` +
-						`Please compact context (e.g. clear_mind) before switching to this model.`
-					);
-				}
-			}
-		} catch (error: any) {
-			if (error?.message?.includes("exceeds target model context window")) {
-				throw error;
-			}
-			// Non-blocking for external lookup failures
+	// 3. Token pressure guard against the target context window
+	const modelInfo = await (ctx as any).llm.resolveModelInfo(resolved.provider, resolved.model);
+	if (modelInfo?.context?.contextWindow) {
+		const measurement = (ctx as any).tokenMeter.measure(agent.session);
+		if (measurement && measurement.totalTokens > modelInfo.context.contextWindow) {
+			throw new Error(
+				`Current session token pressure (${measurement.totalTokens} tokens) exceeds target model context window (${modelInfo.context.contextWindow} tokens). ` +
+				`Please compact context (e.g. clear_mind) before switching to this model.`
+			);
 		}
 	}
 
@@ -144,6 +128,31 @@ export async function applyModelSelection(
 	return normalizedSelection;
 }
 
+export interface ModelListEntry {
+	id: string;
+	name: string;
+	description?: string;
+	reasoningEfforts?: string[];
+	contextWindow?: number;
+}
+
+export interface ProviderModels {
+	provider: string;
+	models: ModelListEntry[];
+}
+
+/**
+ * Read one model's advertised capabilities. A provider that cannot advertise
+ * them still lists the model, so an unreadable lookup is not an error.
+ */
+async function readModelInfo(ctx: Context, provider: string, model: string): Promise<any> {
+	try {
+		return await (ctx as any).llm.resolveModelInfo(provider, model);
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * List registered providers and their advertised models with capabilities.
  */
@@ -151,60 +160,35 @@ export async function listAvailableModels(
 	ctx: Context,
 	providerFilter?: string,
 	allowedProviders: string[] = []
-): Promise<Array<{
-	provider: string;
-	models: Array<{
-		id: string;
-		name: string;
-		description?: string;
-		reasoningEfforts?: string[];
-		contextWindow?: number;
-	}>;
-}>> {
-	if (!(ctx as any).llm?.listProviders) {
-		return [];
-	}
+): Promise<ProviderModels[]> {
+	const results: ProviderModels[] = [];
 
-	const providers = (ctx as any).llm.listProviders();
-	const results = [];
-
-	for (const p of providers) {
+	for (const p of (ctx as any).llm.listProviders()) {
 		if (providerFilter && p.id !== providerFilter) continue;
 		if (allowedProviders.length > 0 && !allowedProviders.includes(p.id)) continue;
 
 		try {
 			const models = await (ctx as any).llm.listModels(p.id);
-			const modelList = [];
+			const modelList: ModelListEntry[] = [];
 			for (const m of models) {
-				try {
-					const info = await (ctx as any).llm.resolveModelInfo(p.id, m.id);
-					const entry: any = {
-						id: String(m.id),
-						name: String(m.name || m.id)
-					};
-					if (m.description) entry.description = String(m.description);
-					if (info.reasoning?.efforts?.length) {
-						entry.reasoningEfforts = info.reasoning.efforts.map((e: any) => String(e.id));
-					}
-					if (typeof info.context?.contextWindow === "number") {
-						entry.contextWindow = info.context.contextWindow;
-					}
-					modelList.push(entry);
-				} catch {
-					const entry: any = {
-						id: String(m.id),
-						name: String(m.name || m.id)
-					};
-					if (m.description) entry.description = String(m.description);
-					modelList.push(entry);
+				const entry: ModelListEntry = {
+					id: String(m.id),
+					name: String(m.name || m.id)
+				};
+				if (m.description) entry.description = String(m.description);
+
+				const info = await readModelInfo(ctx, p.id, m.id);
+				if (info?.reasoning?.efforts?.length) {
+					entry.reasoningEfforts = info.reasoning.efforts.map((e: any) => String(e.id));
 				}
+				if (typeof info?.context?.contextWindow === "number") {
+					entry.contextWindow = info.context.contextWindow;
+				}
+				modelList.push(entry);
 			}
-			results.push({
-				provider: p.id,
-				models: modelList
-			});
+			results.push({ provider: p.id, models: modelList });
 		} catch {
-			// Skip failing providers
+			// One unreadable provider must not hide every other provider's models
 		}
 	}
 

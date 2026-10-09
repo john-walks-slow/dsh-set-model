@@ -67,6 +67,15 @@
 | 复核追加 | `scripts/dev-worktree.sh` 没带 `--patch`，照 README 做人工验证会得到未播种实例 | 脚本补上种子参数 |
 | 复核追加 | e2e 断言值等于种子/上轮残留时会假绿；成功的提示靠固定 sleep 等待，宿主写回慢时闪红 | 探针值改为每轮唯一的 `probe-${Date.now()}`，成功提示改为 `waitForFunction` 轮询（同时异步等待写回完成） |
 
+## 与主干合并（1f5c4aa）
+
+接手了 issue #1 会话的交接文档 [`docs/freeform/261009-settings-volatile-handoff.md`](../../freeform/261009-settings-volatile-handoff.md)：它给出的两条硬事实（配置字段必须 `.volatile()` 否则设置页看不到本插件；纯 volatile 变更走 `_commitVolatile` 原地更新、插件不重挂载）与本实现的写法一致，无需返工。合并事实：
+
+- 主干 `c6b0302` 在 `src/index.ts` 留下的注释「the resolved config is a per-application constant」与上述第二条相反；合并时该文件整体采用本分支实现（`snapshotConfig()` 实时解包 + `loader/volatile-update` 重建工具集），该注释随之消失，`installSection` 死代码也早已被 `settings.configure` 取代。
+- 主干删掉的 `@deepseek-ai/dsh-settings` 依赖需要保留：宿主半用它的类型标注 `ctx.settings.configure`，浏览器半注入 `remote.settings`。已恢复为 optional peer + devDependency（核心运行时包仍在 `peerDependencies`）。
+- 主干 `c6b0302` 对 `src/controller.ts` 的精简（去掉冗余的 `lastUsed` 回退、`requestHeader()` 不再可选调用）无冲突合入，本分支 30 例单测全绿。
+- 实测 `settings/describe`：命名空间列表 20 项且包含 `set-model`（交接文档记录修复前为 19 项、不含本插件），`revision: 3`，`value.mode: preset`、`presets: daily,deep`。
+
 ## 验证结果
 
 - `npm run check`（宿主 + 浏览器半两份 tsc）通过；
