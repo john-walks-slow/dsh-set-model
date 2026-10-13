@@ -252,3 +252,7 @@ git push --follow-tags
 > 409 `Cannot publish over previously staged version`。实测约 5 分钟后自动 promote（`0.2.0`：PUT 15:27:43Z → 上线 15:32:33Z）。
 > 遇到 409 不要改版本号，等待并复查 registry 即可。落库判定用 `npm view dsh-set-model@<version> dist.shasum`
 > 与本地 tgz 的 `sha1sum` 比对：一致即上线产物与本地产物字节相同。
+
+## 社区
+
+- 感谢 [LINUX DO](https://linux.do/) 社区提供的交流环境。
