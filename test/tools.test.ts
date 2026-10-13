@@ -39,6 +39,15 @@ test("Tools: set_model executes valid model change and renders feedback", async 
 	assert.ok(text?.includes("Model successfully switched to anthropic/claude-3-7-sonnet"));
 	assert.ok(text?.includes("reasoning: high"));
 	assert.ok(text?.includes("Reason: phase change to deep analysis"));
+
+	// Switching with "medium" on a model supporting [low, high, max] adapts to "high" and notes it
+	const adaptedRes: any = await setTool.execute(
+		{ provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "medium", reason: "routine implementation" },
+		{ agent } as any
+	);
+	assert.equal(adaptedRes.current.reasoningEffort, "high");
+	const adaptedText = (setTool.output.render({} as any, adaptedRes)[0] as any)?.text;
+	assert.ok(adaptedText?.includes("reasoning: high (adapted from medium)"));
 });
 
 test("Tools: set_model rejects empty input", async () => {

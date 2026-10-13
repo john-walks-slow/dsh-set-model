@@ -9,7 +9,7 @@ import {
 	isPlanModeActive,
 	type ActiveModelSelection
 } from "./controller.js";
-import type { ResolvedSetModelConfig } from "./config.js";
+import { REASONING_EFFORTS, type ResolvedSetModelConfig } from "./config.js";
 import { findPreset, formatPreset, matchPreset, presetToSelection } from "./presets.js";
 
 function requireAgent(agent: Agent | undefined): Agent {
@@ -57,8 +57,9 @@ export function setModelTool(ctx: Context, live: () => ResolvedSetModelConfig) {
 			},
 			reasoningEffort: {
 				type: "string",
-				enum: ["off", "low", "high", "max"],
-				description: "Target reasoning effort ('off' to disable thinking; 'low', 'high', 'max' to set thinking depth)."
+				enum: [...REASONING_EFFORTS],
+				description:
+					"Target reasoning effort ('off' to disable thinking; 'minimal', 'low', 'medium', 'high', 'xhigh', 'max' to set thinking depth; automatically adapts to the nearest level supported by the target model)."
 			},
 			reason: {
 				type: "string",
@@ -130,7 +131,15 @@ export function setModelTool(ctx: Context, live: () => ResolvedSetModelConfig) {
 				config.allowedProviders
 			);
 
-			const reasoningText = normalized.reasoningEffort ? ` · reasoning: ${normalized.reasoningEffort}` : "";
+			const adaptedNote =
+				args.reasoningEffort && normalized.reasoningEffort !== args.reasoningEffort
+					? normalized.reasoningEffort
+						? ` (adapted from ${args.reasoningEffort})`
+						: ` (${args.reasoningEffort} omitted: model does not use reasoning effort)`
+					: "";
+			const reasoningText = normalized.reasoningEffort
+				? ` · reasoning: ${normalized.reasoningEffort}${adaptedNote}`
+				: adaptedNote;
 			const message = `Model successfully switched to ${normalized.provider}/${normalized.model}${reasoningText}. Effective from the next step.` +
 				(args.reason ? `\nReason: ${args.reason}` : "");
 

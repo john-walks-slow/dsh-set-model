@@ -113,8 +113,17 @@ export function createMockContext(): {
 			},
 			resolveCallConfig: async (config: any) => {
 				const key = `${config.provider}/${config.model}`;
-				if (!modelsInfoMap[key]) {
+				const info = modelsInfoMap[key];
+				if (!info) {
 					throw new Error(`Unknown route ${key}`);
+				}
+				if (config.reasoningEffort !== undefined) {
+					const supported = info.reasoning?.efforts?.map((e: any) => e.id) ?? [];
+					if (!supported.includes(config.reasoningEffort)) {
+						throw new Error(
+							`provider "${config.provider}" model "${config.model}" does not support reasoning effort "${config.reasoningEffort}"`
+						);
+					}
 				}
 				return {
 					provider: config.provider,

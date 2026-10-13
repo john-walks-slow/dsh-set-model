@@ -132,7 +132,7 @@ The plugin watches the plan projection state on `agent/pre-step` — zero manual
   Please compact context (e.g. clear_mind) before switching to this model.
   ```
 
-- **Route validation**: the candidate combination is validated by the DSH core via `ctx.llm.resolveCallConfig` (provider adapter exists, model is valid, reasoningEffort is supported); invalid combinations return a clear error and write no session state;
+- **Route validation & adaptive reasoning effort**: supports all 7 reasoning levels (`off | minimal | low | medium | high | xhigh | max`), automatically clamping to the nearest level the target model supports (e.g. `xhigh`/`max` → `high`) or omitting it on non-reasoning models before validating via `ctx.llm.resolveCallConfig`;
 - **Configuration problems are not fatal**: duplicate preset ids, missing provider/model, a `planPreset` naming no preset, and similar issues are logged (`dsh-set-model: …`) and skipped — the plugin still loads, so a typo cannot take the whole plugin tree down;
 - **Root agents only**: the tools are registered for root agents only (subagents get no self-switching tools); set `enableAgentTools: false` to disable them entirely.
 
@@ -162,7 +162,7 @@ The settings namespace is the plugin's profile loader entry id: **`set-model`** 
         when: 常规实现、修改、测试  # target stage; rendered into the policy prompt
         provider: deepseek
         model: deepseek-chat
-        reasoningEffort: low      # off | low | high | max; defaults to the model default
+        reasoningEffort: low      # off | minimal | low | medium | high | xhigh | max; defaults to the model default
       - id: deep
         name: 深度攻坚
         when: 疑难排查、架构设计

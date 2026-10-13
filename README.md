@@ -132,7 +132,7 @@ Current: deepseek/deepseek-reasoner · reasoning max · preset deep
   Please compact context (e.g. clear_mind) before switching to this model.
   ```
 
-- **路由校验**：候选组合经 DSH 核心 `ctx.llm.resolveCallConfig` 校验（provider 适配器存在、模型合法、reasoningEffort 受支持），非法组合返回明确错误，不写入任何会话状态；
+- **路由校验与思考深度自适应**：支持完整的 7 级思考深度（`off | minimal | low | medium | high | xhigh | max`）；当目标模型不支持所选档位时自动沿阶梯就近钳制（如 `xhigh`/`max` → `high`），非推理模型自动剥离思考深度，再经 DSH 核心 `ctx.llm.resolveCallConfig` 校验路由；
 - **配置诊断不致命**：重复档位 id、缺 provider/model、`planPreset` 指向不存在的档位等会写入宿主日志（`dsh-set-model: ...`）并跳过该条，插件照常加载——配置错误不会拖垮整棵插件树；
 - **仅根 Agent**：工具只注册给根 Agent（subagent 不提供自主调模）；`enableAgentTools: false` 可整体关闭。
 
@@ -162,7 +162,7 @@ Settings 命名空间为插件在 profile 里的 loader entry id：**`set-model`
         when: 常规实现、修改、测试  # 适用阶段，写进策略清单
         provider: deepseek
         model: deepseek-chat
-        reasoningEffort: low      # off | low | high | max，缺省跟随模型默认
+        reasoningEffort: low      # off | minimal | low | medium | high | xhigh | max，缺省跟随模型默认
       - id: deep
         name: 深度攻坚
         when: 疑难排查、架构设计

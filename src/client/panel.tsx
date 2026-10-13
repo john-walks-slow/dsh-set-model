@@ -617,7 +617,7 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 								}
 							>
 								<option value="">跟随模型默认</option>
-								{["off", "low", "high", "max"].map((effort) => (
+								{["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((effort) => (
 									<option key={effort} value={effort}>
 										{effort}
 									</option>

@@ -1,6 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { ReasoningEffortId } from "@deepseek-ai/dsh-llm";
+import { REASONING_EFFORTS } from "./config.js";
 
 export interface ActiveModelSelection {
 	provider: string;
@@ -12,6 +13,62 @@ export interface TargetModelSelection {
 	provider?: string;
 	model?: string;
 	reasoningEffort?: string;
+}
+
+/**
+ * Adapt a requested reasoning effort to the target model's supported efforts.
+ *
+ * - If the model supports no reasoning efforts at all, returns `undefined`.
+ * - If the requested effort is directly supported, returns it unchanged.
+ * - If the requested effort is `"off"` and `"off"` is not supported, picks the
+ *   lowest supported effort.
+ * - For any thinking effort (`minimal`..`max`) not directly supported, clamps to
+ *   the nearest non-`"off"` supported effort on the escalation ladder
+ *   (`off < minimal < low < medium < high < xhigh < max`), breaking ties upward.
+ */
+export function adaptReasoningEffort(
+	desired: string | undefined,
+	supportedEfforts: readonly string[] | undefined
+): string | undefined {
+	if (!supportedEfforts || supportedEfforts.length === 0) {
+		return undefined;
+	}
+	if (desired === undefined) {
+		return undefined;
+	}
+	if (supportedEfforts.includes(desired)) {
+		return desired;
+	}
+
+	const rankOf = (effort: string): number => (REASONING_EFFORTS as readonly string[]).indexOf(effort);
+	const desiredRank = rankOf(desired);
+	if (desiredRank === -1) {
+		return undefined;
+	}
+
+	// When a thinking level is requested, avoid collapsing to "off" if any thinking level exists.
+	const candidates =
+		desired === "off"
+			? supportedEfforts
+			: supportedEfforts.filter((effort) => effort !== "off");
+	const pool = candidates.length > 0 ? candidates : supportedEfforts;
+
+	let best: string | undefined;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	let bestRank = -1;
+
+	for (const candidate of pool) {
+		const candidateRank = rankOf(candidate);
+		if (candidateRank === -1) continue;
+		const distance = Math.abs(candidateRank - desiredRank);
+		if (distance < bestDistance || (distance === bestDistance && candidateRank > bestRank)) {
+			best = candidate;
+			bestDistance = distance;
+			bestRank = candidateRank;
+		}
+	}
+
+	return best ?? pool[0];
 }
 
 /**
@@ -90,11 +147,17 @@ export async function applyModelSelection(
 		);
 	}
 
-	// 2. Validate route and options with ctx.llm
+	// 2. Inspect target model capabilities to adapt reasoningEffort across models
+	const preModelInfo = await readModelInfo(ctx, targetProvider, targetModel);
+	const supportedEfforts: string[] | undefined = preModelInfo?.reasoning?.efforts?.map((e: any) => String(e.id));
+	const effectiveEffort =
+		preModelInfo !== undefined ? adaptReasoningEffort(targetEffort, supportedEfforts) : targetEffort;
+
+	// 3. Validate route and options with ctx.llm
 	const candidateConfig: any = {
 		provider: targetProvider,
 		model: targetModel,
-		...(targetEffort ? { reasoningEffort: ReasoningEffortId(targetEffort) } : {})
+		...(effectiveEffort ? { reasoningEffort: ReasoningEffortId(effectiveEffort) } : {})
 	};
 
 	let resolved: any;
@@ -104,8 +167,11 @@ export async function applyModelSelection(
 		throw new Error(`Model validation failed for ${targetProvider}/${targetModel}: ${error?.message || String(error)}`);
 	}
 
-	// 3. Token pressure guard against the target context window
-	const modelInfo = await (ctx as any).llm.resolveModelInfo(resolved.provider, resolved.model);
+	// 4. Token pressure guard against the target context window
+	const modelInfo =
+		preModelInfo !== undefined && resolved.provider === targetProvider && resolved.model === targetModel
+			? preModelInfo
+			: await (ctx as any).llm.resolveModelInfo(resolved.provider, resolved.model);
 	if (modelInfo?.context?.contextWindow) {
 		const measurement = (ctx as any).tokenMeter.measure(agent.session);
 		if (measurement && measurement.totalTokens > modelInfo.context.contextWindow) {
@@ -116,7 +182,7 @@ export async function applyModelSelection(
 		}
 	}
 
-	// 4. Commit model/selection event to session
+	// 5. Commit model/selection event to session
 	const normalizedSelection: ActiveModelSelection = {
 		provider: resolved.provider,
 		model: resolved.model,

@@ -30,14 +30,16 @@ test("resolveConfig: parses presets and trims optional fields", () => {
 				model: " deepseek-chat ",
 				reasoningEffort: "low"
 			},
-			{ id: "deep", provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "max" }
+			{ id: "deep", provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "max" },
+			{ id: "mid", provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "medium" },
+			{ id: "xdeep", provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "xhigh" }
 		],
 		planPreset: "deep"
 	});
 
 	assert.equal(config.mode, "preset");
 	assert.deepEqual(config.problems, []);
-	assert.equal(config.presets.length, 2);
+	assert.equal(config.presets.length, 4);
 	assert.deepEqual(config.presets[0], {
 		id: "daily",
 		name: "日常执行",
@@ -52,6 +54,8 @@ test("resolveConfig: parses presets and trims optional fields", () => {
 		model: "deepseek-reasoner",
 		reasoningEffort: "max"
 	});
+	assert.equal(config.presets[2]?.reasoningEffort, "medium");
+	assert.equal(config.presets[3]?.reasoningEffort, "xhigh");
 	assert.equal(config.planPreset, "deep");
 });
 

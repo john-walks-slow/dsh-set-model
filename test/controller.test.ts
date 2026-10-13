@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
 	resolveCurrentSelection,
 	applyModelSelection,
+	adaptReasoningEffort,
 	listAvailableModels,
 	isPlanModeActive
 } from "../src/controller.js";
@@ -114,4 +115,66 @@ test("listAvailableModels: returns catalog with capabilities", async () => {
 	assert.ok(reasoner);
 	assert.deepEqual(reasoner?.reasoningEfforts, ["low", "high", "max"]);
 	assert.equal(reasoner?.contextWindow, 64000);
+});
+
+test("adaptReasoningEffort: maps across heterogeneous model effort ladders", () => {
+	// Non-reasoning model strips effort
+	assert.equal(adaptReasoningEffort("high", undefined), undefined);
+	assert.equal(adaptReasoningEffort("high", []), undefined);
+
+	// Model supporting [off, low, medium, high] (e.g. cpa/medium, cpa/high)
+	const cpaStandard = ["off", "low", "medium", "high"];
+	assert.equal(adaptReasoningEffort("medium", cpaStandard), "medium");
+	assert.equal(adaptReasoningEffort("xhigh", cpaStandard), "high");
+	assert.equal(adaptReasoningEffort("max", cpaStandard), "high");
+	assert.equal(adaptReasoningEffort("minimal", cpaStandard), "low");
+	assert.equal(adaptReasoningEffort("off", cpaStandard), "off");
+
+	// Model supporting [low, high, max] (e.g. deepseek-reasoner in fixture)
+	const r1Efforts = ["low", "high", "max"];
+	assert.equal(adaptReasoningEffort("medium", r1Efforts), "high");
+	assert.equal(adaptReasoningEffort("xhigh", r1Efforts), "max");
+	assert.equal(adaptReasoningEffort("minimal", r1Efforts), "low");
+	assert.equal(adaptReasoningEffort("off", r1Efforts), "low");
+
+	// Model supporting [off, high, max] (e.g. cpa/hybrid)
+	const hybridEfforts = ["off", "high", "max"];
+	assert.equal(adaptReasoningEffort("low", hybridEfforts), "high");
+	assert.equal(adaptReasoningEffort("medium", hybridEfforts), "high");
+	assert.equal(adaptReasoningEffort("xhigh", hybridEfforts), "max");
+});
+
+test("applyModelSelection: adapts unsupported reasoningEffort instead of failing", async () => {
+	const mock = createMockContext();
+	const session = createMockSession("s-adapt");
+	const agent = createMockAgent(session, mock.ctx);
+
+	// 1. Request "medium" on deepseek-reasoner (supports [low, high, max]) -> clamps to "high"
+	const s1 = await applyModelSelection(agent, mock.ctx, {
+		provider: "deepseek",
+		model: "deepseek-reasoner",
+		reasoningEffort: "medium"
+	});
+	assert.equal(s1.reasoningEffort, "high");
+
+	// 2. Request "xhigh" on deepseek-reasoner (supports [low, high, max]) -> clamps to "max"
+	const s2 = await applyModelSelection(agent, mock.ctx, {
+		provider: "deepseek",
+		model: "deepseek-reasoner",
+		reasoningEffort: "xhigh"
+	});
+	assert.equal(s2.reasoningEffort, "max");
+
+	// 3. Switch from deepseek-reasoner (pending reasoningEffort: "max") to non-reasoning deepseek-chat -> strips effort
+	(mock.ctx as any).sessionProjections.setState(session, "modelSelection", {
+		lastUsed: null,
+		pending: { provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "max" }
+	});
+	const s3 = await applyModelSelection(agent, mock.ctx, {
+		provider: "deepseek",
+		model: "deepseek-chat"
+	});
+	assert.equal(s3.provider, "deepseek");
+	assert.equal(s3.model, "deepseek-chat");
+	assert.equal(s3.reasoningEffort, undefined);
 });

@@ -1,8 +1,8 @@
 import z from "@deepseek-ai/schemastery";
 import type { Volatile } from "@deepseek-ai/cordis";
 
-/** Reasoning depths DSH adapters understand. */
-export const REASONING_EFFORTS = ["off", "low", "high", "max"] as const;
+/** Reasoning depths DSH adapters understand, in escalation order. */
+export const REASONING_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
@@ -16,8 +16,11 @@ export type ModelPolicyMode = "free" | "preset";
 export const ReasoningEffortSchema = z
 	.union([
 		z.const("off").description("Disable thinking/reasoning"),
+		z.const("minimal").description("Minimal reasoning effort"),
 		z.const("low").description("Low reasoning effort"),
+		z.const("medium").description("Medium reasoning effort"),
 		z.const("high").description("High reasoning effort"),
+		z.const("xhigh").description("Extra-high reasoning effort"),
 		z.const("max").description("Max reasoning effort")
 	])
 	.description("Optional reasoning depth/thinking effort");
