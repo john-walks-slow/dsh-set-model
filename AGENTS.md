@@ -3,17 +3,19 @@
 ## 职责
 
 为 DSH 提供模型策略（model policy）能力：
-1. 向 Agent 注册调模工具——自由模式 `set_model` / `list_models`，档位模式 `switch_preset` / `list_presets`；
-2. 与 Plan 模式联动的模型自动升降级（进入自动切高智力模型/档位，退出自动恢复）；
-3. 把「阶段→模型」策略写成系统提示词段落，并提供插件自带的 Web 设置页维护档位与策略。
+1. 向 Agent 注册调模工具——自由调模 `set_model` / `list_models`（`enableModelTools`）与档位切换 `switch_preset` / `list_presets`（`enablePresetTools`）两个开关彼此独立；
+2. 基于 TypeSafe Jev 决策模型的自动模型档位切换（由 `jevEnabled` 控制，支持 `JEV_BASE_URL` / `JEV_API_KEY` 通用环境变量与自定义配置，与上面两个工具开关独立）；
+3. 与 Plan 模式联动的模型自动升降级（进入自动切高智力模型/档位，退出自动恢复）；
+4. 把「阶段→模型」策略写成系统提示词段落，并提供插件自带的 Web 设置页维护档位与策略。
 
 ## 地图
 
-- `src/config.ts` — 配置 Schema（mode、presets、policyPrompt、planPreset、planModel…）与 `resolveConfig`（归一化 + `problems`/`warnings` 诊断：前者=该条配置被废弃，后者=合法但有话要说）；**所有可编辑字段必须标 `.volatile()`**，否则不会出现在设置表单里
+- `src/config.ts` — 配置 Schema（presets、policyPrompt、planPreset、planModel、enableModelTools、enablePresetTools、jevEnabled、jevApiKey…）与 `resolveConfig`（归一化 + `problems`/`warnings` 诊断：前者=该条配置被废弃，后者=合法但有话要说）；**所有可编辑字段必须标 `.volatile()`**，否则不会出现在设置表单里。档位的 `provider`/`model` 必须同时填写或同时留空：留空 = 不绑定模型，应用时沿用当前会话的 provider/model，只调思考深度；`presets` 为空或未声明时一律回落到 `DEFAULT_PRESETS`（low/medium/high，均不绑定模型）——不存在「零档位」状态；`planPreset` 优先于 `planModel`（两者都设时 warn）
 - `src/presets.ts` — 档位查找/匹配/渲染：`findPreset`、`presetToSelection`、`matchPreset`、`renderPresetRoster`、`renderModelPolicySection`
 - `src/controller.ts` — 核心控制器：模型校验（`ctx.llm.resolveCallConfig`）、Token 容量水位校验、活跃模型解析、事件写入（`model/selection`）
-- `src/tools.ts` — 四个工具：`set_model`、`list_models`、`switch_preset`、`list_presets`（按 mode 二选一注册）
-- `src/index.ts` — Cordis 插件入口：`dsh:model-policy` 系统提示词段落、运行时上下文行、按 mode 注册工具、`agent/pre-step` 联动 Plan 模式、`settings.configure({auto:false})`
+- `src/jev.ts` — TypeSafe Jev 自动切模核心：凭据解析（配置项/环境变量）、最新上下文提取、Jev Decisions API 交互、并发 generation 竞态淘汰、Plan 模式避让与提交前实时核验
+- `src/tools.ts` — 四个工具：`set_model`、`list_models`、`switch_preset`、`list_presets`（按两个开关分别注册，可同时开启）
+- `src/index.ts` — Cordis 插件入口：`dsh:model-policy` 系统提示词段落、运行时上下文行、按开关注册工具、`agent/pre-step` 联动 Plan 模式与 Jev 自动推断、`settings.configure({auto:false})`
 - `src/client/` — 浏览器半：`index.ts` 注册 `settings.section`，`panel.tsx` 设置页（读写 `set-model` 命名空间）
 - `scripts/build-client.mjs` — esbuild 打包浏览器半为 `lib/client.js`（lazy-CJS，`id` 必须等于包名），构建后自动 `node --check`
 - `e2e/verify-policy-page.mjs` — dsh-e2e 无头浏览器验证设置页注册/读写/持久化
@@ -31,4 +33,4 @@
 
 ## 已知边界
 
-- 档位模式只约束 Agent 的工具面：用户在 GUI 模型选择器的切换**无法**被插件拦截（`dsh-api-session-controller.selectForNextRequest` 无 hook），这是设计选择而非缺陷。
+- 档位工具只约束 Agent 的工具面：用户在 GUI 模型选择器的切换**无法**被插件拦截（`dsh-api-session-controller.selectForNextRequest` 无 hook），这是设计选择而非缺陷。

@@ -1,5 +1,5 @@
 /**
- * Browser half of dsh-set-model: contributes the "模型档位" page to the DSH
+ * Browser half of dsh-set-model: contributes the "动态模型" page to the DSH
  * settings panel, over the `set-model` settings namespace the host plugin owns.
  *
  * Registration goes through `slots.inject("settings.section", …)`: the settings
@@ -50,7 +50,7 @@ export function apply(ctx: ClientContext): void {
 					name: "settings.section",
 					id: "model-policy",
 					order: 132,
-					label: () => "模型档位",
+					label: () => "动态模型",
 					inject: injectRemote
 				},
 				ModelPolicyPanel

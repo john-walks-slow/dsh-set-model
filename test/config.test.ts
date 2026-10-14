@@ -1,26 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveConfig } from "../src/config.js";
-import { snapshotConfig } from "../src/config.js";
+import { Config, resolveConfig, snapshotConfig } from "../src/config.js";
 import { liveConfig } from "./helpers.js";
 
-test("resolveConfig: defaults to free mode with no policy", () => {
+test("resolveConfig: defaults to the built-in thinking-depth presets and the free model tools", () => {
 	const config = resolveConfig();
 
-	assert.equal(config.mode, "free");
-	assert.deepEqual(config.presets, []);
+	assert.deepEqual(
+		config.presets.map((preset) => [preset.id, preset.reasoningEffort]),
+		[
+			["low", "low"],
+			["medium", "medium"],
+			["high", "high"]
+		]
+	);
+	// 内置档位不绑定模型：应用时跟随当前会话
+	assert.ok(config.presets.every((preset) => preset.provider === undefined && preset.model === undefined));
+	assert.ok(config.presets.every((preset) => (preset.when ?? "") !== ""));
 	assert.equal(config.policyPrompt, "");
 	assert.equal(config.planPreset, undefined);
 	assert.equal(config.planModel, undefined);
 	assert.equal(config.autoRestorePlanModel, true);
-	assert.equal(config.enableAgentTools, true);
+	assert.equal(config.enableModelTools, true);
+	assert.equal(config.enablePresetTools, false);
 	assert.deepEqual(config.allowedProviders, []);
 	assert.deepEqual(config.problems, []);
 });
 
 test("resolveConfig: parses presets and trims optional fields", () => {
 	const config = resolveConfig({
-		mode: "preset",
 		presets: [
 			{
 				id: " daily ",
@@ -37,7 +45,6 @@ test("resolveConfig: parses presets and trims optional fields", () => {
 		planPreset: "deep"
 	});
 
-	assert.equal(config.mode, "preset");
 	assert.deepEqual(config.problems, []);
 	assert.equal(config.presets.length, 4);
 	assert.deepEqual(config.presets[0], {
@@ -61,70 +68,79 @@ test("resolveConfig: parses presets and trims optional fields", () => {
 
 test("resolveConfig: reports every unusable preset and keeps the rest", () => {
 	const config = resolveConfig({
-		mode: "preset",
 		presets: [
 			{ id: "daily", provider: "deepseek", model: "deepseek-chat" },
 			{ id: "daily", provider: "deepseek", model: "deepseek-reasoner" },
-			{ id: "broken", provider: "", model: "deepseek-chat" },
+			{ id: "keep", provider: "deepseek", model: "deepseek-chat" },
+			{ id: "half-route", provider: "deepseek", model: "" },
+			{ id: "global", provider: "", model: "" },
 			{ id: "wrong-effort", provider: "deepseek", model: "deepseek-chat", reasoningEffort: "ludicrous" }
 		]
 	});
 
 	assert.deepEqual(
 		config.presets.map((preset) => preset.id),
-		["daily", "wrong-effort"]
+		["daily", "global", "wrong-effort"]
 	);
-	assert.equal(config.presets[1]?.reasoningEffort, undefined);
+	// 两个路由字段都留空 = 只钉思考深度，跟随当前模型
+	assert.equal(config.presets[1]?.provider, undefined);
+	assert.equal(config.presets[1]?.model, undefined);
+	assert.equal(config.presets[2]?.reasoningEffort, undefined);
 	assert.ok(config.problems.some((problem) => problem.includes('duplicate preset id "daily"')));
-	assert.ok(config.problems.some((problem) => problem.includes("id, provider and model are all required")));
+	assert.ok(config.problems.some((problem) => problem.includes('preset id "keep" is reserved')));
+	assert.ok(config.problems.some((problem) => problem.includes("provider and model must both be set or both be empty")));
 	// A typo'd effort falls back to the model default, so the preset stays usable: warn, not error.
 	assert.ok(config.warnings.some((warning) => warning.includes('unknown reasoningEffort "ludicrous"')));
 });
 
-test("resolveConfig: preset mode without presets reports, free mode ignores them silently", () => {
-	const empty = resolveConfig({ mode: "preset" });
-	assert.equal(empty.presets.length, 0);
-	assert.ok(empty.problems.some((problem) => problem.includes("no usable presets")));
+test("resolveConfig: a missing or empty preset list falls back to the built-in three", () => {
+	for (const raw of [undefined, []] as const) {
+		const config = resolveConfig(raw === undefined ? {} : { presets: raw });
+		assert.deepEqual(
+			config.presets.map((preset) => preset.id),
+			["low", "medium", "high"]
+		);
+		assert.deepEqual(config.problems, []);
+	}
 
-	// Declaring presets while in free mode is harmless: they simply take no effect.
-	const unused = resolveConfig({
-		mode: "free",
+	// 显式声明则完全取代内置档位
+	const declared = resolveConfig({
 		presets: [{ id: "daily", provider: "deepseek", model: "deepseek-chat" }]
 	});
-	assert.equal(unused.presets.length, 1);
-	assert.deepEqual(unused.problems, []);
+	assert.equal(declared.presets.length, 1);
+	assert.deepEqual(declared.problems, []);
 });
 
-test("resolveConfig: plan target validated against the mode", () => {
+test("resolveConfig: a dangling planPreset is a problem, planModel alone is fine", () => {
 	const dangling = resolveConfig({
-		mode: "preset",
 		presets: [{ id: "daily", provider: "deepseek", model: "deepseek-chat" }],
 		planPreset: "deep"
 	});
 	assert.ok(dangling.problems.some((problem) => problem.includes('planPreset "deep" matches no declared preset')));
 
-	const ignoredPlanModel = resolveConfig({
-		mode: "preset",
+	const routeOnly = resolveConfig({
 		presets: [{ id: "daily", provider: "deepseek", model: "deepseek-chat" }],
 		planModel: { provider: "deepseek", model: "deepseek-reasoner" }
 	});
-	assert.equal(ignoredPlanModel.planModel?.model, "deepseek-reasoner");
-	// Leftover planModel after switching modes is a legitimate state, not a broken config.
-	assert.deepEqual(ignoredPlanModel.problems, []);
-	assert.ok(ignoredPlanModel.warnings.some((warning) => warning.includes("planModel is unused in preset mode")));
+	assert.equal(routeOnly.planModel?.model, "deepseek-reasoner");
+	assert.deepEqual(routeOnly.problems, []);
+	assert.deepEqual(routeOnly.warnings, []);
 });
 
-test("resolveConfig: a dangling planPreset is only fatal where it would switch", () => {
-	// In free mode the settings page hides the field, so a leftover must not
-	// shout at the user on every save.
-	const free = resolveConfig({ mode: "free", planPreset: "deep" });
-	assert.deepEqual(free.problems, []);
-	assert.ok(free.warnings.some((warning) => warning.includes('planPreset "deep" matches no declared preset')));
+test("resolveConfig: planPreset shadows planModel with a warning", () => {
+	const config = resolveConfig({
+		presets: [{ id: "deep", provider: "deepseek", model: "deepseek-reasoner" }],
+		planPreset: "deep",
+		planModel: { provider: "deepseek", model: "deepseek-chat" }
+	});
+
+	assert.equal(config.planPreset, "deep");
+	assert.deepEqual(config.problems, []);
+	assert.ok(config.warnings.some((warning) => warning.includes("planModel is ignored because planPreset is set")));
 });
 
 test("resolveConfig: allowedProviders also constrains presets", () => {
 	const config = resolveConfig({
-		mode: "preset",
 		allowedProviders: ["deepseek"],
 		presets: [
 			{ id: "daily", provider: "deepseek", model: "deepseek-chat" },
@@ -142,21 +158,20 @@ test("resolveConfig: allowedProviders also constrains presets", () => {
 test("snapshotConfig: reads the live references the Loader hands to apply", () => {
 	// The platform validates the raw config; volatile fields come back as refs.
 	const live = liveConfig({
-		mode: "preset",
 		presets: [{ id: "deep", provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "max" }],
 		policyPrompt: "线上事故先切 deep。",
 		planPreset: "deep",
+		enablePresetTools: true,
 		allowedProviders: ["deepseek"]
 	});
 
-	assert.equal(typeof live.mode.get, "function");
-	assert.equal(live.mode.get(), "preset");
+	assert.equal(typeof live.presets.get, "function");
 	assert.deepEqual(live.presets.get(), [
 		{ id: "deep", provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "max" }
 	]);
 
 	const config = snapshotConfig(live);
-	assert.equal(config.mode, "preset");
+	assert.equal(config.enablePresetTools, true);
 	assert.equal(config.policyPrompt, "线上事故先切 deep。");
 	assert.equal(config.planPreset, "deep");
 	assert.deepEqual(config.allowedProviders, ["deepseek"]);
@@ -167,10 +182,77 @@ test("snapshotConfig: reads the live references the Loader hands to apply", () =
 test("snapshotConfig: schema defaults reach the plugin through the references", () => {
 	const config = snapshotConfig(liveConfig());
 
-	assert.equal(config.mode, "free");
 	assert.equal(config.autoRestorePlanModel, true);
-	assert.equal(config.enableAgentTools, true);
-	assert.deepEqual(config.presets, []);
+	assert.equal(config.enableModelTools, true);
+	assert.equal(config.enablePresetTools, false);
+	assert.equal(config.jevEnabled, false);
+	assert.equal(config.jevConfidenceThreshold, 0.7);
+	assert.deepEqual(
+		config.presets.map((preset) => preset.id),
+		["low", "medium", "high"]
+	);
 	assert.deepEqual(config.allowedProviders, []);
 	assert.equal(config.planModel, undefined);
+});
+
+test("resolveConfig: handles jev config and the two independent tool toggles", () => {
+	const config = resolveConfig({
+		enableModelTools: false,
+		enablePresetTools: true,
+		jevEnabled: true,
+		jevApiKey: "test-api-key",
+		jevConfidenceThreshold: 0.85,
+		presets: [{ id: "fast", provider: "deepseek", model: "deepseek-chat" }]
+	});
+
+	assert.equal(config.enableModelTools, false);
+	assert.equal(config.enablePresetTools, true);
+	assert.equal(config.jevEnabled, true);
+	assert.equal(config.jevApiKey, "test-api-key");
+	assert.equal(config.jevConfidenceThreshold, 0.85);
+	assert.deepEqual(config.problems, []);
+	assert.deepEqual(config.warnings, []);
+});
+
+test("resolveConfig: warns on an out-of-range Jev confidence threshold", () => {
+	const config = resolveConfig({
+		jevEnabled: true,
+		jevConfidenceThreshold: 1.5,
+		presets: []
+	});
+
+	assert.equal(config.jevEnabled, true);
+	assert.equal(config.jevConfidenceThreshold, 0.7);
+	assert.ok(config.warnings.some((w) => w.includes("must be between 0.0 and 1.0")));
+	// 空档位表回落到内置三档，Jev 始终有可判定的档位空间
+	assert.equal(config.presets.length, 3);
+});
+
+test("Config schema: all editable fields are declared .volatile() and align with settings", () => {
+	const configDict = (Config as any).dict as Record<string, any>;
+	const expectedVolatiles = [
+		"presets",
+		"policyPrompt",
+		"planPreset",
+		"planModel",
+		"autoRestorePlanModel",
+		"enableModelTools",
+		"enablePresetTools",
+		"allowedProviders",
+		"jevEnabled",
+		"jevApiKey",
+		"jevBaseUrl",
+		"jevModel",
+		"jevConfidenceThreshold"
+	];
+
+	for (const key of expectedVolatiles) {
+		assert.ok(key in configDict, `expected field "${key}" to be in Config schema`);
+		assert.equal(configDict[key]?.meta?.volatile, true, `field "${key}" must be volatile`);
+	}
+
+	// 已废弃的模式开关与其别名不再出现在 schema 中
+	assert.equal("mode" in configDict, false);
+	assert.equal("enableAgentTools" in configDict, false);
+	assert.equal("toolEnabled" in configDict, false);
 });

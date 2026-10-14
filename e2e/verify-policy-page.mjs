@@ -1,6 +1,6 @@
 // e2e verification for dsh-set-model's browser half:
 //   1. the GUI boots with the plugin's client bundle loaded (no page/console errors)
-//   2. the "模型档位" settings page registers and reads the `set-model` namespace
+//   2. the "动态模型" settings page registers and reads the `set-model` namespace
 //   3. the page writes the preset table through the settings RPC, and the value
 //      survives a reload (host re-applied the plugin from the new config)
 // Run with:
@@ -69,7 +69,7 @@ async function openModelPolicyPage() {
 	await dismissDialogs();
 	await page.getByRole("button", { name: "Settings" }).click({ force: true });
 	await page.waitForTimeout(2000);
-	await page.getByRole("button", { name: "模型档位" }).click();
+	await page.getByRole("button", { name: "动态模型" }).click();
 	await page.waitForTimeout(1500);
 }
 
@@ -109,7 +109,7 @@ if (consoleErrors.length) console.log("   ", consoleErrors.slice(0, 5));
 console.log("=== STAGE 2: settings page registers ===");
 await openModelPolicyPage();
 const panelText = await page.evaluate(() => document.body.innerText || "");
-check(panelText.includes("模型档位"), "settings section label visible");
+check(panelText.includes("动态模型"), "settings section label visible");
 check(panelText.includes("档位模式"), "model policy page body rendered");
 check(!panelText.includes("未找到设置命名空间"), "`set-model` namespace resolved");
 check(!panelText.includes("设置服务不可用"), "settings RPC available");

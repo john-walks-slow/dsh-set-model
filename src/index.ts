@@ -12,12 +12,13 @@ import {
 	type ActiveModelSelection,
 	type TargetModelSelection
 } from "./controller.js";
-import { findPreset, matchPreset, presetToSelection, renderModelPolicySection } from "./presets.js";
+import { findPreset, matchPreset, pinsRoute, presetToSelection, renderModelPolicySection } from "./presets.js";
 import { setModelTool, listModelsTool, switchPresetTool, listPresetsTool } from "./tools.js";
+import { runJevModelInference, defaultJevManager, JevInferenceManager, probeJevEndpoint } from "./jev.js";
 
 export const name = "dsh-set-model";
 export const inject = ["tools", "llm", "agents", "sessionProjections", "tokenMeter", "agentDefaultModel", "systemPrompt"];
-export { Config };
+export { Config, defaultJevManager, JevInferenceManager };
 
 /** Model policy sits between PLAN_POLICY (500) and TEAM_POLICY (600). */
 const MODEL_POLICY_SECTION_NAME = "dsh:model-policy";
@@ -36,14 +37,18 @@ interface PlanTarget {
 	label: string;
 }
 
-/** The model Plan Mode should activate, resolved for the configured mode. */
+/** Web 壳提供的 Fetch 路由注册面（不在 cordis 的 Context 类型上）。 */
+interface JevProbeConnection {
+	fetch: { register(route: unknown): () => Promise<void> };
+}
+
+/** The model Plan Mode should activate: an explicit preset wins over a raw route. */
 function resolvePlanTarget(config: ResolvedSetModelConfig): PlanTarget | undefined {
-	if (config.mode === "preset") {
-		if (config.planPreset === undefined) return undefined;
+	if (config.planPreset !== undefined) {
 		const preset = findPreset(config.presets, config.planPreset);
-		return preset === undefined
-			? undefined
-			: { selection: presetToSelection(preset), label: `preset ${preset.id} (${preset.provider}/${preset.model})` };
+		if (preset === undefined) return undefined;
+		const route = pinsRoute(preset) ? `${preset.provider}/${preset.model}` : "沿用当前模型";
+		return { selection: presetToSelection(preset), label: `preset ${preset.id} (${route})` };
 	}
 	if (config.planModel === undefined) return undefined;
 	return {
@@ -53,6 +58,9 @@ function resolvePlanTarget(config: ResolvedSetModelConfig): PlanTarget | undefin
 }
 
 export function apply(ctx: Context, initialConfig: SetModelLiveConfig) {
+	// Dispose all in-flight Jev requests on plugin unload/reload.
+	ctx.effect(() => () => defaultJevManager.abortAll());
+
 	// Every config field is volatile: the Loader commits a settings write into
 	// these references in place (emitting `loader/volatile-update`) instead of
 	// re-running apply, so the config is read per use, never snapshotted once.
@@ -67,6 +75,35 @@ export function apply(ctx: Context, initialConfig: SetModelLiveConfig) {
 		}
 	};
 	reportProblems(current());
+
+	// 1a. RPC route for the Web settings page to test Jev connectivity.
+	// The client cannot read process.env, so the probe must run in the host
+	// process. Credentials are resolved here using the exact same logic as the
+	// runtime Jev inference (plugin settings > env vars > defaults).
+	// 1a. Jev 测速路由：浏览器读不到 process.env，因此探测在宿主进程内执行，
+	// 复用与回合推断同源的凭据解析（插件设置 → 环境变量 → 默认值）。
+	// 用 ctx.inject 等待 connection 就绪：它是 Web 壳提供的服务，apply 时可能尚未挂载。
+	ctx.inject(["connection"], (connCtx) => {
+		// `connection` 由 Web 壳提供，不在 cordis 的 Context 类型面上。
+		const conn = (connCtx as unknown as { connection: JevProbeConnection }).connection;
+		connCtx.effect(
+			() =>
+				conn.fetch.register({
+					path: "/api/dsh-set-model/jev-probe",
+					methods: ["POST"],
+					requestBody: "buffered",
+					fetch: async (request: Request) => {
+						const body = (await request.json().catch(() => ({}))) as {
+							baseUrl?: string;
+							model?: string;
+						};
+						return Response.json(await probeJevEndpoint(body, current()));
+					}
+				}),
+			"dsh-set-model: Jev probe"
+		);
+	});
+
 
 	// 1. Settings: declare this instance's page policy, exactly as the official
 	// settings pages do. The owner MUST be this entry's fiber — the injected
@@ -109,10 +146,10 @@ export function apply(ctx: Context, initialConfig: SetModelLiveConfig) {
 		agentTools.delete(agent);
 
 		const config = current();
-		if (!config.enableAgentTools) return;
-
-		const factories: ToolFactory[] =
-			config.mode === "preset" ? [switchPresetTool, listPresetsTool] : [setModelTool, listModelsTool];
+		const factories: ToolFactory[] = [];
+		if (config.enableModelTools) factories.push(setModelTool, listModelsTool);
+		if (config.enablePresetTools) factories.push(switchPresetTool, listPresetsTool);
+		if (factories.length === 0) return;
 		agentTools.set(
 			agent,
 			factories.map((factory) => agent.ctx.tools.register(factory(ctx, current)))
@@ -199,12 +236,26 @@ export function apply(ctx: Context, initialConfig: SetModelLiveConfig) {
 				}
 			}
 
+			// 6. Jev auto model switching on turn start (step 1 in host loop), bypassed if Plan Mode is active
+			if (payload.step === 1 && agent && !isPlanModeActive(agent, ctx)) {
+				try {
+					await runJevModelInference(ctx, agent, payload.messages, current);
+				} catch (err) {
+					ctx.logger?.warn(
+						`dsh-set-model: Jev inference error: ${err instanceof Error ? err.message : String(err)}`
+					);
+				}
+			}
+
 			return next();
 		}
 	);
 
 	ctx.logger?.info(
-		`dsh-set-model: initialized in ${current().mode} mode (${current().presets.length} preset(s))`
+		`dsh-set-model: initialized with ${current().presets.length} preset(s) ` +
+			`(model tools: ${current().enableModelTools ? "on" : "off"}, ` +
+			`preset tools: ${current().enablePresetTools ? "on" : "off"}, ` +
+			`Jev: ${current().jevEnabled ? "on" : "off"})`
 	);
 }
 

@@ -6,7 +6,7 @@ import { createMockContext, createMockSession, createMockAgent, eventsOf, liveCo
 
 const presetConfig = () =>
 	resolveConfig({
-		mode: "preset",
+		enablePresetTools: true,
 		presets: [
 			{ id: "daily", name: "日常执行", when: "常规实现", provider: "deepseek", model: "deepseek-chat", reasoningEffort: "low" },
 			{ id: "deep", name: "深度攻坚", when: "疑难排查", provider: "deepseek", model: "deepseek-reasoner", reasoningEffort: "max" }
@@ -133,7 +133,6 @@ test("Tools: list_presets reports the roster and the running preset", async () =
 	const tool = listPresetsTool(mock.ctx, presetConfig);
 	const res: any = await tool.execute({}, { agent } as any);
 
-	assert.equal(res.mode, "preset");
 	assert.equal(res.planMode, true);
 	assert.equal(res.current.preset, "deep");
 	assert.deepEqual(
@@ -145,6 +144,6 @@ test("Tools: list_presets reports the roster and the running preset", async () =
 	);
 
 	const text = (tool.output.render({}, res)[0] as any)?.text;
-	assert.ok(text?.includes("Mode: preset · Plan Mode active"));
+	assert.ok(text?.includes("Plan Mode: active"));
 	assert.ok(text?.includes("**deep（深度攻坚）** — deepseek/deepseek-reasoner · reasoning max — 适用：疑难排查 ← current"));
 });

@@ -6,12 +6,13 @@ export const REASONING_EFFORTS = ["off", "minimal", "low", "medium", "high", "xh
 
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
+export const DEFAULT_JEV_BASE_URL = "https://openrouter.ai/api/alpha/decisions";
+export const DEFAULT_JEV_MODEL = "typesafe/jev-1.13";
+export const DEFAULT_JEV_CONFIDENCE_THRESHOLD = 0.7;
+
 export function isReasoningEffort(value: unknown): value is ReasoningEffort {
 	return typeof value === "string" && (REASONING_EFFORTS as readonly string[]).includes(value);
 }
-
-/** How the plugin treats model switching. */
-export type ModelPolicyMode = "free" | "preset";
 
 export const ReasoningEffortSchema = z
 	.union([
@@ -54,44 +55,68 @@ export interface ModelPresetConfig {
 
 /**
  * One selectable model preset: provider, model and reasoning effort under a
- * stable id the agent switches by.
+ * stable id the agent switches by. Leaving provider and model empty pins only
+ * the reasoning effort, so the preset follows whichever model is active.
  */
 export const ModelPresetConfigSchema = z
 	.object({
 		id: z.string().description("Stable preset id the agent switches by, e.g. 'daily'"),
 		name: z.string().description("Display name used in prompts and the settings page; falls back to id"),
 		when: z.string().description("Task stage this preset suits; rendered into the model policy prompt"),
-		provider: z.string().description("Provider ID, e.g. 'deepseek'"),
-		model: z.string().description("Model ID, e.g. 'deepseek-reasoner'"),
+		provider: z.string().default("").description("Provider ID, e.g. 'deepseek'. Empty keeps the active provider"),
+		model: z.string().default("").description("Model ID, e.g. 'deepseek-reasoner'. Empty keeps the active model"),
 		reasoningEffort: ReasoningEffortSchema
 	})
 	.description("One selectable model preset");
 
+/**
+ * Presets used when the deployment declares none: one preset per thinking
+ * depth, none of them pinning a model, so the plugin still has a usable
+ * decision space with no configuration at all.
+ */
+export const DEFAULT_PRESETS: ModelPresetConfig[] = [
+	{
+		id: "low",
+		when: "单轮即可答的问答、文案与格式整理、只读查看、改一处文案或常量，无需读多个文件才能定位",
+		reasoningEffort: "low"
+	},
+	{
+		id: "medium",
+		when: "常规实现与修改：改动集中在 1 个模块内、需求明确无需方案权衡、需要跑测试验证",
+		reasoningEffort: "medium"
+	},
+	{
+		id: "high",
+		when: "需要多步推理或方案权衡：跨 2 个以上模块的改动、需先读多个文件才能定位的排障、架构与接口设计、并发或性能类疑难",
+		reasoningEffort: "high"
+	}
+];
+
 export interface SetModelPluginConfig {
-	mode?: ModelPolicyMode;
 	presets?: ModelPresetConfig[];
 	policyPrompt?: string;
 	planPreset?: string;
 	planModel?: ModelSelectionConfig;
 	autoRestorePlanModel?: boolean;
-	enableAgentTools?: boolean;
+	enableModelTools?: boolean;
+	enablePresetTools?: boolean;
 	allowedProviders?: string[];
+	jevEnabled?: boolean;
+	jevApiKey?: string;
+	jevBaseUrl?: string;
+	jevModel?: string;
+	jevConfidenceThreshold?: number;
 }
 
 /**
  * Settings and plugin composition configuration for dsh-set-model.
  */
 export const Config = z.object({
-	mode: z
-		.union([z.const("free"), z.const("preset")])
-		.default("free")
-		.volatile()
-		.description("'free': the agent may switch to any registered model; 'preset': it may only switch between declared presets"),
 	presets: z
 		.array(ModelPresetConfigSchema)
-		.default([])
+		.default(DEFAULT_PRESETS)
 		.volatile()
-		.description("Selectable model presets. Required and non-empty in preset mode"),
+		.description("Selectable model presets. Empty falls back to one preset per thinking depth, none pinning a model"),
 	policyPrompt: z
 		.string()
 		.default("")
@@ -101,25 +126,56 @@ export const Config = z.object({
 		.string()
 		.default("")
 		.volatile()
-		.description("Preset id activated on entering Plan Mode (preset mode)"),
+		.description("Preset id activated on entering Plan Mode; takes precedence over planModel"),
 	planModel: ModelSelectionConfigSchema.description(
-		"Model and reasoning effort automatically activated upon entering Plan Mode (free mode)"
+		"Model and reasoning effort activated upon entering Plan Mode when no planPreset is set"
 	),
 	autoRestorePlanModel: z
 		.boolean()
 		.default(true)
 		.volatile()
 		.description("Whether to automatically restore the non-plan model when exiting Plan Mode"),
-	enableAgentTools: z
+	enableModelTools: z
 		.boolean()
 		.default(true)
 		.volatile()
-		.description("Whether to register the model tools for root agents"),
+		.description("Whether to register the free model-switching tools (set_model / list_models) for root agents"),
+	enablePresetTools: z
+		.boolean()
+		.default(false)
+		.volatile()
+		.description("Whether to register the preset tools (switch_preset / list_presets) for root agents"),
 	allowedProviders: z
 		.array(z.string())
 		.default([])
 		.volatile()
-		.description("Optional whitelist of provider IDs permitted for switching. Empty allows all registered providers.")
+		.description("Optional whitelist of provider IDs permitted for switching. Empty allows all registered providers."),
+	jevEnabled: z
+		.boolean()
+		.default(false)
+		.volatile()
+		.description("Whether to automatically switch model presets using the TypeSafe Jev decision model"),
+	jevApiKey: z
+		.string()
+		.role("secret")
+		.default("")
+		.volatile()
+		.description("Jev Decisions API key; falls back to JEV_API_KEY environment variable"),
+	jevBaseUrl: z
+		.string()
+		.default("")
+		.volatile()
+		.description("Jev Decisions API endpoint URL (default: https://openrouter.ai/api/alpha/decisions, or via JEV_BASE_URL environment variable)"),
+	jevModel: z
+		.string()
+		.default("")
+		.volatile()
+		.description("Jev decision model identifier (default: typesafe/jev-1.13, or via JEV_MODEL environment variable)"),
+	jevConfidenceThreshold: z
+		.number()
+		.default(DEFAULT_JEV_CONFIDENCE_THRESHOLD)
+		.volatile()
+		.description("Confidence threshold for Jev auto-switching between 0.0 and 1.0 (default: 0.7)")
 });
 
 /** One validated preset, ready to be applied to a session. */
@@ -127,8 +183,10 @@ export interface ResolvedModelPreset {
 	id: string;
 	name?: string;
 	when?: string;
-	provider: string;
-	model: string;
+	/** Pinned provider; absent means the preset follows the active provider. */
+	provider?: string;
+	/** Pinned model; absent means the preset follows the active model. */
+	model?: string;
 	reasoningEffort?: ReasoningEffort;
 }
 
@@ -139,14 +197,21 @@ export interface ResolvedPlanModel {
 }
 
 export interface ResolvedSetModelConfig {
-	mode: ModelPolicyMode;
 	presets: ResolvedModelPreset[];
 	policyPrompt: string;
 	planPreset?: string;
 	planModel?: ResolvedPlanModel;
 	autoRestorePlanModel: boolean;
-	enableAgentTools: boolean;
+	/** Free model-switching tools (`set_model` / `list_models`). */
+	enableModelTools: boolean;
+	/** Preset tools (`switch_preset` / `list_presets`). */
+	enablePresetTools: boolean;
 	allowedProviders: string[];
+	jevEnabled: boolean;
+	jevApiKey?: string;
+	jevBaseUrl?: string;
+	jevModel?: string;
+	jevConfidenceThreshold: number;
 	/** Unusable configuration: the affected entry is dropped and reported at error level. */
 	problems: string[];
 	/** Legitimate but worth saying out loud; reported at warn level. */
@@ -162,27 +227,37 @@ export interface ResolvedSetModelConfig {
  * never once at activation.
  */
 export interface SetModelLiveConfig {
-	readonly mode: Volatile<ModelPolicyMode>;
 	readonly presets: Volatile<ModelPresetConfig[]>;
 	readonly policyPrompt: Volatile<string>;
 	readonly planPreset: Volatile<string>;
 	readonly planModel: Volatile<ModelSelectionConfig | undefined>;
 	readonly autoRestorePlanModel: Volatile<boolean>;
-	readonly enableAgentTools: Volatile<boolean>;
+	readonly enableModelTools: Volatile<boolean>;
+	readonly enablePresetTools: Volatile<boolean>;
 	readonly allowedProviders: Volatile<string[]>;
+	readonly jevEnabled: Volatile<boolean>;
+	readonly jevApiKey: Volatile<string>;
+	readonly jevBaseUrl: Volatile<string>;
+	readonly jevModel: Volatile<string>;
+	readonly jevConfidenceThreshold: Volatile<number>;
 }
 
 /** Unwrap the live references into a plain, validated snapshot for one use. */
 export function snapshotConfig(live: SetModelLiveConfig): ResolvedSetModelConfig {
 	return resolveConfig({
-		mode: live.mode.get(),
 		presets: live.presets.get(),
 		policyPrompt: live.policyPrompt.get(),
 		planPreset: live.planPreset.get(),
 		planModel: live.planModel.get(),
 		autoRestorePlanModel: live.autoRestorePlanModel.get(),
-		enableAgentTools: live.enableAgentTools.get(),
-		allowedProviders: live.allowedProviders.get()
+		enableModelTools: live.enableModelTools.get(),
+		enablePresetTools: live.enablePresetTools.get(),
+		allowedProviders: live.allowedProviders.get(),
+		jevEnabled: live.jevEnabled.get(),
+		jevApiKey: live.jevApiKey.get(),
+		jevBaseUrl: live.jevBaseUrl.get(),
+		jevModel: live.jevModel.get(),
+		jevConfidenceThreshold: live.jevConfidenceThreshold.get()
 	});
 }
 
@@ -234,15 +309,25 @@ function normalizePresets(
 		const id = text(candidate.id);
 		const provider = text(candidate.provider);
 		const model = text(candidate.model);
-		if (id === "" || provider === "" || model === "") {
-			problems.push(`${label}: id, provider and model are all required; ignoring it`);
+		if (id === "") {
+			problems.push(`${label}: id is required; ignoring it`);
+			return;
+		}
+		if ((provider === "") !== (model === "")) {
+			problems.push(
+				`${label} ("${id}"): provider and model must both be set or both be empty; ignoring it`
+			);
+			return;
+		}
+		if (id === "keep") {
+			problems.push(`${label}: preset id "keep" is reserved for Jev decision-making and cannot be used; ignoring it`);
 			return;
 		}
 		if (seen.has(id)) {
 			problems.push(`${label}: duplicate preset id "${id}"; ignoring it`);
 			return;
 		}
-		if (allowedProviders.length > 0 && !allowedProviders.includes(provider)) {
+		if (provider !== "" && allowedProviders.length > 0 && !allowedProviders.includes(provider)) {
 			problems.push(`${label} ("${id}"): provider "${provider}" is outside allowedProviders; ignoring it`);
 			return;
 		}
@@ -256,8 +341,7 @@ function normalizePresets(
 			id,
 			...(name !== "" ? { name } : {}),
 			...(when !== "" ? { when } : {}),
-			provider,
-			model,
+			...(provider !== "" ? { provider, model } : {}),
 			...(reasoningEffort ? { reasoningEffort } : {})
 		});
 	});
@@ -273,34 +357,52 @@ export function resolveConfig(raw: Partial<SetModelPluginConfig> | Record<string
 	const allowedProviders = Array.isArray(source.allowedProviders)
 		? source.allowedProviders.map((entry) => text(entry)).filter((entry) => entry !== "")
 		: [];
-	const mode: ModelPolicyMode = source.mode === "preset" ? "preset" : "free";
-	const presets = normalizePresets(source.presets, allowedProviders, problems, warnings);
+	// 空或未声明 presets 都用内置三档；没有「零档位」这个状态。
+	const presetRows = Array.isArray(source.presets) && source.presets.length > 0 ? source.presets : DEFAULT_PRESETS;
+	const presets = normalizePresets(presetRows, allowedProviders, problems, warnings);
 	const planModel = normalizePlanModel(source.planModel, problems, warnings);
 	const planPreset = text(source.planPreset) || undefined;
 
-	if (mode === "preset" && presets.length === 0) {
-		problems.push("mode is 'preset' but no usable presets are declared; the model tools cannot switch anything");
-	}
 	if (planPreset !== undefined && !presets.some((preset) => preset.id === planPreset)) {
-		const message = `planPreset "${planPreset}" matches no declared preset`;
-		// In free mode the settings page hides this field, so the user cannot
-		// clean it up from there; do not shout about a leftover every save.
-		if (mode === "preset") problems.push(`${message}; Plan Mode will not switch models`);
-		else warnings.push(`${message}; unused in free mode`);
+		problems.push(`planPreset "${planPreset}" matches no declared preset; Plan Mode will not switch models`);
 	}
-	if (mode === "preset" && planPreset === undefined && planModel !== undefined) {
-		warnings.push("planModel is unused in preset mode; declare planPreset instead");
+	if (planPreset !== undefined && planModel !== undefined) {
+		warnings.push("planModel is ignored because planPreset is set");
+	}
+
+	const enableModelTools = typeof source.enableModelTools === "boolean" ? source.enableModelTools : true;
+	const enablePresetTools = typeof source.enablePresetTools === "boolean" ? source.enablePresetTools : false;
+
+	const jevEnabled = typeof source.jevEnabled === "boolean" ? source.jevEnabled : false;
+	const jevApiKey = text(source.jevApiKey) || undefined;
+	const jevBaseUrl = text(source.jevBaseUrl) || undefined;
+	const jevModel = text(source.jevModel) || undefined;
+
+	let jevConfidenceThreshold = DEFAULT_JEV_CONFIDENCE_THRESHOLD;
+	if (typeof source.jevConfidenceThreshold === "number" && Number.isFinite(source.jevConfidenceThreshold)) {
+		if (source.jevConfidenceThreshold >= 0 && source.jevConfidenceThreshold <= 1) {
+			jevConfidenceThreshold = source.jevConfidenceThreshold;
+		} else {
+			warnings.push(
+				`jevConfidenceThreshold (${source.jevConfidenceThreshold}) must be between 0.0 and 1.0; falling back to ${DEFAULT_JEV_CONFIDENCE_THRESHOLD}`
+			);
+		}
 	}
 
 	return {
-		mode,
 		presets,
 		policyPrompt: typeof source.policyPrompt === "string" ? source.policyPrompt.trim() : "",
 		...(planPreset !== undefined ? { planPreset } : {}),
 		...(planModel !== undefined ? { planModel } : {}),
 		autoRestorePlanModel: typeof source.autoRestorePlanModel === "boolean" ? source.autoRestorePlanModel : true,
-		enableAgentTools: typeof source.enableAgentTools === "boolean" ? source.enableAgentTools : true,
+		enableModelTools,
+		enablePresetTools,
 		allowedProviders,
+		jevEnabled,
+		...(jevApiKey !== undefined ? { jevApiKey } : {}),
+		...(jevBaseUrl !== undefined ? { jevBaseUrl } : {}),
+		...(jevModel !== undefined ? { jevModel } : {}),
+		jevConfidenceThreshold,
 		problems,
 		warnings
 	};

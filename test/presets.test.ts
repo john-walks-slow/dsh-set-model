@@ -41,6 +41,37 @@ test("presets: matchPreset prefers the exact effort, then an unpinned route", ()
 	assert.equal(matchPreset(presets, { provider: "openai", model: "gpt-4o" }), undefined);
 });
 
+test("presets: a preset without a route pins only the thinking depth", () => {
+	const inherited: ResolvedModelPreset[] = [
+		{ id: "low", when: "轻量", reasoningEffort: "low" },
+		{ id: "high", when: "攻坚", reasoningEffort: "high" },
+		{ id: "pinned", provider: "deepseek", model: "deepseek-chat", reasoningEffort: "low" }
+	];
+
+	// 只交出思考深度：provider/model 留给 applyModelSelection 从当前会话补齐
+	assert.deepEqual(presetToSelection(inherited[0]!), { reasoningEffort: "low" });
+	assert.deepEqual(presetToSelection(inherited[1]!), { reasoningEffort: "high" });
+
+	// 钉死路由的档位优先于继承型档位
+	assert.equal(
+		matchPreset(inherited, { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "low" })?.id,
+		"pinned"
+	);
+	// 其他模型上按思考深度命中继承型档位
+	assert.equal(matchPreset(inherited, { provider: "cpa", model: "omni", reasoningEffort: "high" })?.id, "high");
+	assert.equal(matchPreset(inherited, { provider: "cpa", model: "omni", reasoningEffort: "low" })?.id, "low");
+	// 深度不在任何一档时不要硬套
+	assert.equal(matchPreset(inherited, { provider: "cpa", model: "omni", reasoningEffort: "max" }), undefined);
+});
+
+test("presets: the built-in presets render as following the active model", () => {
+	const section = renderModelPolicySection(resolveConfig({ enablePresetTools: true }));
+
+	assert.ok(section.includes("- **low** — 沿用当前模型 · reasoning low"));
+	assert.ok(section.includes("- **medium** — 沿用当前模型 · reasoning medium"));
+	assert.ok(section.includes("- **high** — 沿用当前模型 · reasoning high"));
+});
+
 test("presets: the policy section stays empty until something is configured", () => {
 	assert.equal(renderModelPolicySection(resolveConfig()), "");
 	assert.equal(renderModelPolicySection(resolveConfig({ policyPrompt: "   " })), "");
@@ -54,10 +85,10 @@ test("presets: free mode renders only the policy prompt", () => {
 	assert.ok(!section.includes("switch_preset"));
 });
 
-test("presets: preset mode appends the generated roster", () => {
+test("presets: enabling the preset tools appends the generated roster", () => {
 	const section = renderModelPolicySection(
 		resolveConfig({
-			mode: "preset",
+			enablePresetTools: true,
 			policyPrompt: "线上事故先切 deep。",
 			presets: [
 				{ id: "daily", name: "日常执行", when: "常规实现", provider: "deepseek", model: "deepseek-chat", reasoningEffort: "low" },

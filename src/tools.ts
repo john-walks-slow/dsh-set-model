@@ -365,7 +365,6 @@ export function listPresetsTool(ctx: Context, live: () => ResolvedSetModelConfig
 				type: "object",
 				additionalProperties: false,
 				properties: {
-					mode: { type: "string", required: true },
 					planMode: { type: "boolean", required: true },
 					presets: {
 						type: "array",
@@ -377,8 +376,8 @@ export function listPresetsTool(ctx: Context, live: () => ResolvedSetModelConfig
 								id: { type: "string", required: true },
 								name: { type: "string" },
 								when: { type: "string" },
-								provider: { type: "string", required: true },
-								model: { type: "string", required: true },
+								provider: { type: "string" },
+								model: { type: "string" },
 								reasoningEffort: { type: "string" },
 								current: { type: "boolean", required: true }
 							}
@@ -399,7 +398,7 @@ export function listPresetsTool(ctx: Context, live: () => ResolvedSetModelConfig
 			},
 			render: (_args, val): ContentBlock[] => {
 				const lines: string[] = ["# Model presets", ""];
-				lines.push(`Mode: ${val.mode}${val.planMode ? " · Plan Mode active" : ""}`);
+				lines.push(`Plan Mode: ${val.planMode ? "active" : "inactive"}`);
 				const currentEffort = val.current.reasoningEffort ? ` · reasoning ${val.current.reasoningEffort}` : "";
 				const currentPreset = val.current.preset ? ` · preset ${val.current.preset}` : " · no preset matches";
 				lines.push(`Current: ${val.current.provider}/${val.current.model}${currentEffort}${currentPreset}`);
@@ -422,14 +421,14 @@ export function listPresetsTool(ctx: Context, live: () => ResolvedSetModelConfig
 			const active = matchPreset(config.presets, selection);
 
 			return {
-				mode: config.mode,
 				planMode: isPlanModeActive(activeAgent, ctx),
 				presets: config.presets.map((preset) => ({
 					id: preset.id,
 					...(preset.name ? { name: preset.name } : {}),
 					...(preset.when ? { when: preset.when } : {}),
-					provider: preset.provider,
-					model: preset.model,
+					...(preset.provider !== undefined && preset.model !== undefined
+						? { provider: preset.provider, model: preset.model }
+						: {}),
 					...(preset.reasoningEffort ? { reasoningEffort: preset.reasoningEffort } : {}),
 					current: active?.id === preset.id
 				})),

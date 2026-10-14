@@ -1,5 +1,5 @@
 /**
- * The "模型档位" settings page for dsh-set-model.
+ * The "动态模型" settings page for dsh-set-model.
  *
  * Reads the `set-model` settings namespace (describe), edits the model policy in
  * local state, and commits it through the settings RPC `mutate` — the host
@@ -18,6 +18,10 @@ const NS = "set-model";
 
 const DEFAULT_PROVIDER = "deepseek";
 const DEFAULT_MODEL = "deepseek-chat";
+const DEFAULT_JEV_CONFIDENCE_THRESHOLD = 0.7;
+
+/** Reasoning depths DSH adapters understand, offered when no model is pinned to read capabilities from. */
+const REASONING_EFFORT_IDS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export interface CatalogModel {
 	readonly id: string;
@@ -72,15 +76,20 @@ interface PresetRow {
 	reasoningEffort: string;
 }
 
-interface FormState {
-	mode: "free" | "preset";
+export interface FormState {
 	presets: PresetRow[];
 	policyPrompt: string;
 	planPreset: string;
 	planModel: PresetRow;
 	autoRestorePlanModel: boolean;
-	enableAgentTools: boolean;
+	enableModelTools: boolean;
+	enablePresetTools: boolean;
 	allowedProviders: string;
+	jevEnabled: boolean;
+	jevApiKey: string;
+	jevBaseUrl: string;
+	jevModel: string;
+	jevConfidenceThreshold: number;
 }
 
 function emptyRow(): PresetRow {
@@ -89,14 +98,19 @@ function emptyRow(): PresetRow {
 
 function emptyForm(): FormState {
 	return {
-		mode: "free",
 		presets: [],
 		policyPrompt: "",
 		planPreset: "",
 		planModel: { ...emptyRow(), provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
 		autoRestorePlanModel: true,
-		enableAgentTools: true,
-		allowedProviders: ""
+		enableModelTools: true,
+		enablePresetTools: false,
+		allowedProviders: "",
+		jevEnabled: false,
+		jevApiKey: "",
+		jevBaseUrl: "",
+		jevModel: "",
+		jevConfidenceThreshold: DEFAULT_JEV_CONFIDENCE_THRESHOLD
 	};
 }
 
@@ -117,40 +131,55 @@ function readRow(raw: unknown): PresetRow {
 }
 
 /** Resolve the section from the namespace's resolved value, falling back to the composition base. */
-function readForm(source: Record<string, unknown> | undefined): FormState {
+export function readForm(source: Record<string, unknown> | undefined): FormState {
 	const section = (source?.["value"] ?? source?.["base"] ?? {}) as Record<string, unknown>;
 	return {
-		mode: section.mode === "preset" ? "preset" : "free",
 		presets: Array.isArray(section.presets) ? section.presets.map(readRow) : [],
 		policyPrompt: text(section.policyPrompt),
 		planPreset: text(section.planPreset),
 		planModel: readRow(section.planModel),
 		autoRestorePlanModel: section.autoRestorePlanModel !== false,
-		enableAgentTools: section.enableAgentTools !== false,
-		allowedProviders: Array.isArray(section.allowedProviders) ? section.allowedProviders.join(", ") : ""
+		enableModelTools: section.enableModelTools !== false,
+		enablePresetTools: section.enablePresetTools === true,
+		allowedProviders: Array.isArray(section.allowedProviders) ? section.allowedProviders.join(", ") : "",
+		jevEnabled: section.jevEnabled === true,
+		jevApiKey: text(section.jevApiKey),
+		jevBaseUrl: text(section.jevBaseUrl),
+		jevModel: text(section.jevModel),
+		jevConfidenceThreshold:
+			typeof section.jevConfidenceThreshold === "number" && Number.isFinite(section.jevConfidenceThreshold)
+				? section.jevConfidenceThreshold
+				: DEFAULT_JEV_CONFIDENCE_THRESHOLD
 	};
 }
 
 /** Validation the host would otherwise only report as a load-time log line. */
 function validate(state: FormState): string | undefined {
-	if (state.mode !== "preset") {
-		const hasProvider = state.planModel.provider.trim() !== "";
-		const hasModel = state.planModel.model.trim() !== "";
-		if (hasProvider !== hasModel) {
-			return "自由模式的 Plan 目标需要同时填写 provider 与 model，或两者都留空。";
-		}
-		if (!hasProvider && state.planModel.reasoningEffort !== "") {
-			return "自由模式的 Plan 目标只填了思考强度——请补上 provider 与 model，或清空。";
-		}
-		return undefined;
+	if (
+		typeof state.jevConfidenceThreshold !== "number" ||
+		!Number.isFinite(state.jevConfidenceThreshold) ||
+		state.jevConfidenceThreshold < 0 ||
+		state.jevConfidenceThreshold > 1
+	) {
+		return "Jev 置信度阈值必须介于 0.0 与 1.0 之间。";
 	}
-	if (state.presets.length === 0) return "档位模式下至少需要一条档位。";
+	const planProvider = state.planModel.provider.trim();
+	const planModelId = state.planModel.model.trim();
+	if ((planProvider === "") !== (planModelId === "")) {
+		return "Plan 目标需要同时填写 provider 与 model，或两者都留空。";
+	}
+	if (planProvider === "" && state.planModel.reasoningEffort !== "") {
+		return "Plan 目标只填了思考强度——请补上 provider 与 model，或清空。";
+	}
+	if (state.presets.length === 0) return "至少需要一条档位。";
 	const ids = new Set<string>();
 	for (const [index, row] of state.presets.entries()) {
 		const id = row.id.trim();
 		if (id === "") return `第 ${index + 1} 条档位缺少 id。`;
 		if (ids.has(id)) return `档位 id "${id}" 重复。`;
-		if (row.provider.trim() === "" || row.model.trim() === "") return `档位 "${id}" 缺少 provider 或 model。`;
+		if ((row.provider.trim() === "") !== (row.model.trim() === "")) {
+			return `档位 "${id}" 的 provider 与 model 需要同时填写，或同时留空（留空 = 沿用当前模型）。`;
+		}
 		ids.add(id);
 	}
 	if (state.planPreset.trim() !== "" && !ids.has(state.planPreset.trim())) {
@@ -171,13 +200,16 @@ function rowValue(row: PresetRow): Record<string, unknown> {
 	};
 }
 
-function buildOps(state: FormState): Array<{ op: "set" | "unset"; path: string[]; value?: unknown }> {
+export function buildOps(state: FormState): Array<{ op: "set" | "unset"; path: string[]; value?: unknown }> {
 	const ops: Array<{ op: "set" | "unset"; path: string[]; value?: unknown }> = [
-		{ op: "set", path: ["mode"], value: state.mode },
+		// 已废弃的旧字段，保存时顺手清掉，避免留在 profile 里混淆。
+		{ op: "unset", path: ["mode"] },
+		{ op: "unset", path: ["enableAgentTools"] },
 		{ op: "set", path: ["presets"], value: state.presets.map(rowValue) },
 		{ op: "set", path: ["policyPrompt"], value: state.policyPrompt.trim() },
 		{ op: "set", path: ["autoRestorePlanModel"], value: state.autoRestorePlanModel },
-		{ op: "set", path: ["enableAgentTools"], value: state.enableAgentTools },
+		{ op: "set", path: ["enableModelTools"], value: state.enableModelTools },
+		{ op: "set", path: ["enablePresetTools"], value: state.enablePresetTools },
 		{
 			op: "set",
 			path: ["allowedProviders"],
@@ -185,27 +217,30 @@ function buildOps(state: FormState): Array<{ op: "set" | "unset"; path: string[]
 				.split(",")
 				.map((entry) => entry.trim())
 				.filter((entry) => entry !== "")
-		}
+		},
+		{ op: "set", path: ["jevEnabled"], value: state.jevEnabled },
+		{ op: "set", path: ["jevApiKey"], value: state.jevApiKey.trim() },
+		{ op: "set", path: ["jevBaseUrl"], value: state.jevBaseUrl.trim() },
+		{ op: "set", path: ["jevModel"], value: state.jevModel.trim() },
+		{ op: "set", path: ["jevConfidenceThreshold"], value: state.jevConfidenceThreshold }
 	];
 
-	if (state.mode === "preset") {
-		const planPreset = state.planPreset.trim();
-		ops.push(planPreset === "" ? { op: "unset", path: ["planPreset"] } : { op: "set", path: ["planPreset"], value: planPreset });
+	const planPreset = state.planPreset.trim();
+	ops.push(planPreset === "" ? { op: "unset", path: ["planPreset"] } : { op: "set", path: ["planPreset"], value: planPreset });
+
+	const planModel = rowValue(state.planModel);
+	if (planModel.provider === "" && planModel.model === "") {
+		ops.push({ op: "unset", path: ["planModel"] });
 	} else {
-		const planModel = rowValue(state.planModel);
-		if (planModel.provider === "" && planModel.model === "") {
-			ops.push({ op: "unset", path: ["planModel"] });
-		} else {
-			ops.push({
-				op: "set",
-				path: ["planModel"],
-				value: {
-					provider: planModel.provider,
-					model: planModel.model,
-					...(planModel.reasoningEffort ? { reasoningEffort: planModel.reasoningEffort } : {})
-				}
-			});
-		}
+		ops.push({
+			op: "set",
+			path: ["planModel"],
+			value: {
+				provider: planModel.provider,
+				model: planModel.model,
+				...(planModel.reasoningEffort ? { reasoningEffort: planModel.reasoningEffort } : {})
+			}
+		});
 	}
 	return ops;
 }
@@ -268,6 +303,8 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 	const [catalog, setCatalog] = useState<ModelCatalogValue | undefined>(undefined);
 	const [loaded, setLoaded] = useState(false);
 	const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | undefined>(undefined);
+	const [testingJev, setTestingJev] = useState(false);
+	const [jevTestResult, setJevTestResult] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 	/** Timer of the transient success note; a stale one must not clear a newer note. */
 	const messageTimer = useRef<number | undefined>(undefined);
 
@@ -349,6 +386,8 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 
 	const effortsFor = useCallback(
 		(provider: string, model: string): ReadonlyArray<{ readonly id: string }> => {
+			// 未绑定模型时没有能力目录可查，交出完整档位列表由用户自行选择。
+			if (provider === "" || model === "") return REASONING_EFFORT_IDS.map((id) => ({ id }));
 			const entry = modelsFor(provider).find((candidate) => candidate.id === model);
 			return entry?.reasoning?.efforts ?? [];
 		},
@@ -358,6 +397,7 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 	const renderRoute = (row: PresetRow, onChange: (changes: Partial<PresetRow>) => void): ReactElement => {
 		const models = modelsFor(row.provider);
 		const efforts = effortsFor(row.provider, row.model);
+		const followsActiveModel = row.provider.trim() === "";
 		return (
 			<>
 				<Field label="Provider">
@@ -366,7 +406,7 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 						value={row.provider}
 						onChange={(event) => onChange({ provider: event.target.value, model: "", reasoningEffort: "" })}
 					>
-						<option value="">— 选择 —</option>
+						<option value="">沿用当前模型</option>
 						{providers.map((group) => (
 							<option key={group.id} value={group.id}>
 								{group.name}（{group.id}）
@@ -381,9 +421,10 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 					<select
 						style={inputStyle}
 						value={row.model}
+						disabled={followsActiveModel}
 						onChange={(event) => onChange({ model: event.target.value, reasoningEffort: "" })}
 					>
-						<option value="">— 选择 —</option>
+						<option value="">{followsActiveModel ? "沿用当前模型" : "— 选择 —"}</option>
 						{models.map((model) => (
 							<option key={model.id} value={model.id}>
 								{model.name}（{model.id}）
@@ -414,6 +455,37 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 			</>
 		);
 	};
+
+	const testJevConnection = useCallback(async () => {
+		setTestingJev(true);
+		setJevTestResult(null);
+		try {
+			const response = await fetch("api/dsh-set-model/jev-probe", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					baseUrl: state.jevBaseUrl.trim() || undefined,
+					model: state.jevModel.trim() || undefined
+				})
+			});
+			const result = (await response.json().catch(() => null)) as {
+				ok?: boolean;
+				message?: string;
+			} | null;
+			if (result?.ok) {
+				setJevTestResult({ kind: "ok", text: `正常 · ${result.message ?? ""}`.trim() });
+			} else {
+				setJevTestResult({ kind: "err", text: result?.message ?? `HTTP ${response.status}` });
+			}
+		} catch (error) {
+			setJevTestResult({
+				kind: "err",
+				text: `测速失败：${error instanceof Error ? error.message : String(error)}`
+			});
+		} finally {
+			setTestingJev(false);
+		}
+	}, [state.jevBaseUrl, state.jevModel]);
 
 	const save = useCallback(async () => {
 		if (remote === undefined) return;
@@ -446,36 +518,35 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: "14px", maxWidth: "860px" }}>
 			<div style={{ fontSize: "13px", opacity: 0.85, lineHeight: 1.6 }}>
-				自由模式下 Agent 可用 <code>set_model</code> 切换到任意模型；档位模式下只注册{" "}
-				<code>switch_preset</code> / <code>list_presets</code>，Agent 只能在下列档位之间切换。两种模式下
-				策略提示词都会写入系统提示词；档位模式下档位清单由插件自动生成。
+				两个工具开关彼此独立：自由调模工具让 Agent 用 <code>set_model</code> 切换到任意模型；档位工具让它在
+				下方档位之间切换（<code>switch_preset</code>）。
 			</div>
 
-			<div style={{ display: "flex", gap: "14px", fontSize: "13px" }}>
-				<label style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+			<div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "13px" }}>
+				<label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
 					<input
-						type="radio"
-						checked={state.mode === "free"}
-						onChange={() => patch({ mode: "free" })}
+						type="checkbox"
+						checked={state.enableModelTools}
+						onChange={(event) => patch({ enableModelTools: event.target.checked })}
 					/>
-					自由模式
+					注入自由调模工具（set_model / list_models）
 				</label>
-				<label style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+				<label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
 					<input
-						type="radio"
-						checked={state.mode === "preset"}
-						onChange={() => patch({ mode: "preset" })}
+						type="checkbox"
+						checked={state.enablePresetTools}
+						onChange={(event) => patch({ enablePresetTools: event.target.checked })}
 					/>
-					档位模式
+					注入档位工具（switch_preset / list_presets）
 				</label>
 			</div>
 
 			<div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
 				<div style={{ fontSize: "12px", opacity: 0.75 }}>
-					模型档位（档位模式下生效）{failures.length > 0 ? ` · ${failures.length} 个 provider 目录加载失败` : ""}
+					模型档位（档位工具与 Jev 自动决策时生效）{failures.length > 0 ? ` · ${failures.length} 个 provider 目录加载失败` : ""}
 				</div>
 				{state.presets.length === 0 ? (
-					<div style={{ fontSize: "13px", opacity: 0.6 }}>暂无档位——档位模式下至少需要一条。</div>
+					<div style={{ fontSize: "13px", opacity: 0.6 }}>暂无档位——至少需要一条。</div>
 				) : (
 					state.presets.map((row, index) => (
 						<div key={index} style={cardStyle}>
@@ -571,9 +642,8 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 
 			<div style={cardStyle}>
 				<div style={{ fontSize: "12px", opacity: 0.75 }}>Plan 模式自动切换</div>
-				{state.mode === "preset" ? (
-					<div style={rowStyle}>
-						<Field label="进入 Plan 模式使用哪个档位">
+				<div style={rowStyle}>
+					<Field label="进入 Plan 模式使用哪个档位（优先）">
 							<select
 								style={inputStyle}
 								value={state.planPreset}
@@ -590,9 +660,8 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 							</select>
 						</Field>
 					</div>
-				) : (
-					<div style={rowStyle}>
-						<Field label="进入 Plan 模式使用的模型">
+				<div style={rowStyle}>
+					<Field label="进入 Plan 模式使用的模型">
 							<input
 								style={inputStyle}
 								value={state.planModel.provider}
@@ -617,15 +686,14 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 								}
 							>
 								<option value="">跟随模型默认</option>
-								{["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((effort) => (
+								{REASONING_EFFORT_IDS.map((effort) => (
 									<option key={effort} value={effort}>
 										{effort}
 									</option>
 								))}
 							</select>
 						</Field>
-					</div>
-				)}
+				</div>
 				<label style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" }}>
 					<input
 						type="checkbox"
@@ -637,14 +705,7 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 			</div>
 
 			<div style={cardStyle}>
-				<label style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "12px" }}>
-					<input
-						type="checkbox"
-						checked={state.enableAgentTools}
-						onChange={(event) => patch({ enableAgentTools: event.target.checked })}
-					/>
-					向 Agent 注册调模工具
-				</label>
+				<div style={{ fontSize: "12px", opacity: 0.75 }}>调模范围限制</div>
 				<Field label="Provider 白名单（逗号分隔，留空 = 不限制）">
 					<input
 						style={inputStyle}
@@ -653,6 +714,88 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 						onChange={(event) => patch({ allowedProviders: event.target.value })}
 					/>
 				</Field>
+			</div>
+
+			<div style={cardStyle}>
+				<label style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "13px" }}>
+					<input
+						type="checkbox"
+						checked={state.jevEnabled}
+						onChange={(event) => patch({ jevEnabled: event.target.checked })}
+					/>
+					Jev 自动切档位
+				</label>
+				<div style={{ fontSize: "11px", opacity: 0.7, lineHeight: 1.5 }}>
+					在每轮开始时调用 TypeSafe Jev 决策模型（毫秒级响应、极低成本），根据用户最新指令自动选择最佳档位；
+					不依赖上面两个工具开关。
+				</div>
+				{state.jevEnabled && (
+					<div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+						<div style={rowStyle}>
+							<Field label="Jev API Key（留空则读取环境变量 JEV_API_KEY）">
+								<input
+									type="password"
+									style={inputStyle}
+									value={state.jevApiKey}
+									placeholder="填入 Jev API Key..."
+									onChange={(event) => patch({ jevApiKey: event.target.value })}
+								/>
+							</Field>
+							<Field label="置信度阈值（0.0 ~ 1.0，默认 0.7）">
+								<input
+									type="number"
+									step="0.05"
+									min="0"
+									max="1"
+									style={inputStyle}
+									value={state.jevConfidenceThreshold}
+									onChange={(event) => {
+										const val = Number.parseFloat(event.target.value);
+										patch({ jevConfidenceThreshold: Number.isNaN(val) ? 0.7 : val });
+									}}
+								/>
+							</Field>
+						</div>
+						<div style={rowStyle}>
+							<Field label="Jev Base URL（留空则使用 JEV_BASE_URL 或默认官方端点）">
+								<input
+									style={inputStyle}
+									value={state.jevBaseUrl}
+									placeholder="https://openrouter.ai/api/alpha/decisions"
+									onChange={(event) => patch({ jevBaseUrl: event.target.value })}
+								/>
+							</Field>
+							<Field label="Jev 模型名称（留空则使用 JEV_MODEL 或 typesafe/jev-1.13）">
+								<input
+									style={inputStyle}
+									value={state.jevModel}
+									placeholder="typesafe/jev-1.13"
+									onChange={(event) => patch({ jevModel: event.target.value })}
+								/>
+							</Field>
+						</div>
+						<div style={{ display: "flex", gap: "10px", alignItems: "center", marginTop: "4px" }}>
+							<button
+								type="button"
+								style={buttonStyle}
+								disabled={testingJev}
+								onClick={() => void testJevConnection()}
+							>
+								{testingJev ? "测速中…" : "测速"}
+							</button>
+							{jevTestResult !== null && (
+								<span
+									style={{
+										fontSize: "12px",
+										color: jevTestResult.kind === "ok" ? "#4caf7d" : "#e06666"
+									}}
+								>
+									{jevTestResult.text}
+								</span>
+							)}
+						</div>
+					</div>
+				)}
 			</div>
 
 			<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>

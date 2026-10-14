@@ -183,8 +183,13 @@ export function createMockContext(): {
 			const dispose = fn();
 			return typeof dispose === "function" ? dispose : () => {};
 		},
+		get(_name: string, _strict?: boolean) {
+			// 懒取服务：测试环境没有 connection 等宿主服务，一律返回 undefined。
+			return undefined;
+		},
 		inject(deps: string[], cb: (injectedCtx: any) => void) {
-			cb(ctx);
+			// 与 cordis 一致：依赖齐备时才运行回调（测试环境通常没有 connection）。
+			if (deps.every((name) => (ctx as any)[name] !== undefined)) cb(ctx);
 		},
 		on(_event: string, _handler: any) {
 			return () => {};
