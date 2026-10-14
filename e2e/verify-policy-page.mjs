@@ -110,15 +110,27 @@ console.log("=== STAGE 2: settings page registers ===");
 await openModelPolicyPage();
 const panelText = await page.evaluate(() => document.body.innerText || "");
 check(panelText.includes("动态模型"), "settings section label visible");
-check(panelText.includes("档位模式"), "model policy page body rendered");
+check(panelText.includes("模型档位"), "model policy page body rendered");
 check(!panelText.includes("未找到设置命名空间"), "`set-model` namespace resolved");
 check(!panelText.includes("设置服务不可用"), "settings RPC available");
-check(panelText.includes("自由模式"), "mode radios rendered");
+check(panelText.includes("Agent 调模能力"), "tool switches sit in the capability card");
+
+const switches = page.locator('input[type="checkbox"]');
+check(await switches.first().isChecked(), "free model tools on, as the seed says");
+check(!(await switches.nth(1).isChecked()), "preset tools off, as the seed says");
+
+// The policy prompt feeds both readers, so it must read before the switches
+// that decide whether the agent is one of them.
+const promptBox = await page.getByPlaceholder(/例如：规划与架构设计/).boundingBox();
+const switchesBox = await switches.first().boundingBox();
+check(
+	Boolean(promptBox && switchesBox && promptBox.y < switchesBox.y),
+	"policy prompt sits above the tool switches"
+);
 
 console.log("=== STAGE 3: edit and save through the page ===");
 const presetIds = await page.locator('input[placeholder="daily"]').evaluateAll((nodes) => nodes.map((n) => n.value));
 check(presetIds.join(",") === "daily,deep", `preset table reads the configured presets (${presetIds.join(",")})`);
-check(await page.getByRole("radio").nth(1).isChecked(), "preset mode is the live mode");
 
 const providerSelect = page.locator("select").first();
 const provider = await firstOption(providerSelect);
@@ -150,12 +162,18 @@ check(savedName === PROBE, `preset edit persisted after reload (got "${savedName
 const savedPrompt = await page.getByPlaceholder(/例如：规划与架构设计/).inputValue();
 check(savedPrompt === `e2e 探针 ${PROBE}：规划先切 deep。`, "policy prompt persisted after reload");
 
-console.log("=== STAGE 5: the free-mode Plan target guard ===");
+console.log("=== STAGE 5: the Plan target guard ===");
 // A half-filled Plan target would be dropped by the host while the page claims
 // success, so the page must refuse the save instead.
-await page.getByRole("radio").first().check();
+const planPresetSelect = page
+	.locator("label", { hasText: "进入 Plan 模式使用哪个档位（优先）" })
+	.locator("select");
+await planPresetSelect.selectOption("");
 await page.waitForTimeout(500);
-const planProvider = page.getByPlaceholder("deepseek").first();
+const planProvider = page
+	.locator("label", { hasText: "进入 Plan 模式使用的模型" })
+	.locator("input")
+	.first();
 await planProvider.fill("deepseek-official");
 await page.getByRole("button", { name: "保存并生效" }).click();
 await page.waitForTimeout(1500);
@@ -168,12 +186,25 @@ await page.waitForTimeout(2700); // clear the refusal note first
 await page.getByRole("button", { name: "保存并生效" }).click();
 check(await waitForNote("已保存并热生效"), "both Plan target fields empty saves as unset");
 
-// Leave the profile on the mode the fixture seeds, so a rerun starts clean.
-await page.getByRole("radio").nth(1).check();
-await page.waitForTimeout(500);
+// Leave the profile on the Plan preset the fixture seeds, so a rerun starts clean.
+await planPresetSelect.selectOption("deep");
 await page.waitForTimeout(2700);
 await page.getByRole("button", { name: "保存并生效" }).click();
-check(await waitForNote("已保存并热生效"), "preset mode restored after the guard run");
+check(await waitForNote("已保存并热生效"), "seeded Plan preset restored after the guard run");
+
+console.log("=== STAGE 6: capture the settings page ===");
+// The panel scrolls inside a fixed-height dialog, so a default full-page shot
+// clips it. Give the viewport the panel's height and rewind every scroller.
+await page.setViewportSize({ width: 1280, height: 1600 });
+await page.waitForTimeout(400);
+await page.evaluate(() => {
+	for (const node of document.querySelectorAll("*")) {
+		if (node.scrollHeight > node.clientHeight + 40) node.scrollTop = 0;
+	}
+});
+await page.waitForTimeout(300);
+await page.screenshot({ path: "assets/model-policy-settings.png" });
+console.log("   assets/model-policy-settings.png refreshed");
 
 console.log("=== RESULT ===");
 check(pageErrors.length === 0, `no pageerror after full run (${pageErrors.length})`);

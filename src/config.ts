@@ -62,7 +62,9 @@ export const ModelPresetConfigSchema = z
 	.object({
 		id: z.string().description("Stable preset id the agent switches by, e.g. 'daily'"),
 		name: z.string().description("Display name used in prompts and the settings page; falls back to id"),
-		when: z.string().description("Task stage this preset suits; rendered into the model policy prompt"),
+		when: z
+			.string()
+			.description("Stage this preset suits; rendered into the model policy prompt and used as the Jev decision criterion"),
 		provider: z.string().default("").description("Provider ID, e.g. 'deepseek'. Empty keeps the active provider"),
 		model: z.string().default("").description("Model ID, e.g. 'deepseek-reasoner'. Empty keeps the active model"),
 		reasoningEffort: ReasoningEffortSchema
@@ -121,7 +123,9 @@ export const Config = z.object({
 		.string()
 		.default("")
 		.volatile()
-		.description("Extra model-policy text injected into the system prompt; state which model each task stage should use"),
+		.description(
+			"Deployment policy: which model or preset each task stage should use. Read by the agent while it holds a model-switching tool, and sent to Jev as the decision policy"
+		),
 	planPreset: z
 		.string()
 		.default("")
@@ -389,9 +393,26 @@ export function resolveConfig(raw: Partial<SetModelPluginConfig> | Record<string
 		}
 	}
 
+	// 策略提示词的读者只有两类：带调模工具的 Agent，以及 Jev。两个读者都不在时它只是一段死配置。
+	const policyPrompt = typeof source.policyPrompt === "string" ? source.policyPrompt.trim() : "";
+	if (policyPrompt !== "" && !enableModelTools && !enablePresetTools && !jevEnabled) {
+		warnings.push(
+			"policyPrompt is set but no model tools and no Jev auto switching are enabled; nothing reads it"
+		);
+	}
+	// Jev 只拿得到档位的 when/name/id，缺 when 时判定依据只剩一个档位名。
+	if (jevEnabled) {
+		const withoutStage = presets.filter((preset) => preset.when === undefined).map((preset) => preset.id);
+		if (withoutStage.length > 0) {
+			warnings.push(
+				`presets (${withoutStage.join(", ")}): no "when" stage description; Jev can only judge them by preset id`
+			);
+		}
+	}
+
 	return {
 		presets,
-		policyPrompt: typeof source.policyPrompt === "string" ? source.policyPrompt.trim() : "",
+		policyPrompt,
 		...(planPreset !== undefined ? { planPreset } : {}),
 		...(planModel !== undefined ? { planModel } : {}),
 		autoRestorePlanModel: typeof source.autoRestorePlanModel === "boolean" ? source.autoRestorePlanModel : true,

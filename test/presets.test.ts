@@ -77,7 +77,7 @@ test("presets: the policy section stays empty until something is configured", ()
 	assert.equal(renderModelPolicySection(resolveConfig({ policyPrompt: "   " })), "");
 });
 
-test("presets: free mode renders only the policy prompt", () => {
+test("presets: renders only the policy prompt while no roster applies", () => {
 	const section = renderModelPolicySection(resolveConfig({ policyPrompt: "架构设计用 reasoner。" }));
 
 	assert.ok(section.startsWith("## Model policy"));
@@ -102,4 +102,31 @@ test("presets: enabling the preset tools appends the generated roster", () => {
 	assert.ok(section.includes("switch_preset"));
 	assert.ok(section.includes("- **daily（日常执行）** — deepseek/deepseek-chat · reasoning low — 适用：常规实现"));
 	assert.ok(section.includes("- **deep（深度攻坚）** — deepseek/deepseek-reasoner · reasoning max"));
+});
+
+test("presets: the policy prompt is injected only while a tool can act on it", () => {
+	const policy = "阶段策略。";
+	const onlyJev = renderModelPolicySection(
+		resolveConfig({ policyPrompt: policy, enableModelTools: false, jevEnabled: true })
+	);
+	// Jev 从决策请求里读策略，不带工具的 Agent 看不到这一段，但档位清单照旧
+	assert.ok(!onlyJev.includes(policy));
+	assert.ok(onlyJev.includes("本部署声明的模型档位"));
+
+	assert.ok(
+		renderModelPolicySection(resolveConfig({ policyPrompt: policy, enablePresetTools: true })).includes(policy)
+	);
+
+	// 两个读者都不在：整段消失
+	assert.equal(
+		renderModelPolicySection(
+			resolveConfig({
+				policyPrompt: policy,
+				enableModelTools: false,
+				enablePresetTools: false,
+				jevEnabled: false
+			})
+		),
+		""
+	);
 });

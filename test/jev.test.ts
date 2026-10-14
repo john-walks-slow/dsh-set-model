@@ -285,6 +285,8 @@ test("queryJevPresetDecision: parses choice and validates confidence", async () 
 			assert.equal(body.model, "typesafe/jev-1.13");
 			assert.ok(body.questions.preset.criteria.reasoning);
 			assert.ok(body.questions.preset.criteria.keep);
+			// 没有策略时 state 保持纯字符串
+			assert.equal(body.state, "需要解决复杂死锁问题");
 
 			return {
 				ok: true,
@@ -301,7 +303,10 @@ test("queryJevPresetDecision: parses choice and validates confidence", async () 
 			} as any;
 		};
 
-		const result = await queryJevPresetDecision("需要解决复杂死锁问题", samplePresets, creds);
+		const result = await queryJevPresetDecision(
+			{ context: "需要解决复杂死锁问题", presets: samplePresets },
+			creds
+		);
 		assert.ok(result);
 		assert.equal(result.choice, "reasoning");
 		assert.equal(result.confidence, 0.88);
@@ -329,7 +334,7 @@ test("queryJevPresetDecision: rejects invalid confidence and unknown choice", as
 				})
 			}) as any;
 
-		assert.equal(await queryJevPresetDecision("context", samplePresets, creds), null);
+		assert.equal(await queryJevPresetDecision({ context: "context", presets: samplePresets }, creds), null);
 
 		// 2. choice is unknown key
 		globalThis.fetch = async () =>
@@ -340,7 +345,39 @@ test("queryJevPresetDecision: rejects invalid confidence and unknown choice", as
 				})
 			}) as any;
 
-		assert.equal(await queryJevPresetDecision("context", samplePresets, creds), null);
+		assert.equal(await queryJevPresetDecision({ context: "context", presets: samplePresets }, creds), null);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("queryJevPresetDecision: sends the deployment policy next to the context", async () => {
+	const originalFetch = globalThis.fetch;
+	const creds: JevCredentials = {
+		apiKey: "test-token",
+		baseUrl: "https://openrouter.ai/api/alpha/decisions",
+		model: "typesafe/jev-1.13"
+	};
+	let sent: any;
+
+	try {
+		globalThis.fetch = async (_input, init) => {
+			sent = JSON.parse(String(init?.body));
+			return {
+				ok: true,
+				json: async () => ({
+					answers: { preset: { type: "choice", choice: "keep", confidence: 0.91 } }
+				})
+			} as any;
+		};
+
+		const result = await queryJevPresetDecision(
+			{ context: "改一处文案", presets: samplePresets, policyPrompt: "  改文案用 coding。 " },
+			creds
+		);
+
+		assert.ok(result);
+		assert.deepEqual(sent.state, { policy: "改文案用 coding。", context: "改一处文案" });
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

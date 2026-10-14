@@ -10,10 +10,10 @@
 
 ## 地图
 
-- `src/config.ts` — 配置 Schema（presets、policyPrompt、planPreset、planModel、enableModelTools、enablePresetTools、jevEnabled、jevApiKey…）与 `resolveConfig`（归一化 + `problems`/`warnings` 诊断：前者=该条配置被废弃，后者=合法但有话要说）；**所有可编辑字段必须标 `.volatile()`**，否则不会出现在设置表单里。档位的 `provider`/`model` 必须同时填写或同时留空：留空 = 不绑定模型，应用时沿用当前会话的 provider/model，只调思考深度；`presets` 为空或未声明时一律回落到 `DEFAULT_PRESETS`（low/medium/high，均不绑定模型）——不存在「零档位」状态；`planPreset` 优先于 `planModel`（两者都设时 warn）
-- `src/presets.ts` — 档位查找/匹配/渲染：`findPreset`、`presetToSelection`、`matchPreset`、`renderPresetRoster`、`renderModelPolicySection`
+- `src/config.ts` — 配置 Schema（presets、policyPrompt、planPreset、planModel、enableModelTools、enablePresetTools、jevEnabled、jevApiKey…）与 `resolveConfig`（归一化 + `problems`/`warnings` 诊断：前者=该条配置被废弃，后者=合法但有话要说）；**所有可编辑字段必须标 `.volatile()`**，否则不会出现在设置表单里。档位的 `provider`/`model` 必须同时填写或同时留空：留空 = 不绑定模型，应用时沿用当前会话的 provider/model，只调思考深度；`presets` 为空或未声明时一律回落到 `DEFAULT_PRESETS`（low/medium/high，均不绑定模型）——不存在「零档位」状态；`planPreset` 优先于 `planModel`（两者都设时 warn）；`policyPrompt` 的读者只有「持调模工具的 Agent」与「Jev」，两者都不在时给 warning，Jev 开启而档位缺 `when` 时也给 warning（Jev 只剩档位名可判）
+- `src/presets.ts` — 档位查找/匹配/渲染：`findPreset`、`presetToSelection`、`matchPreset`、`renderPresetRoster`、`renderModelPolicySection`（策略提示词只在 Agent 持有调模工具时注入；档位清单在开档位工具或 Jev 时注入）
 - `src/controller.ts` — 核心控制器：模型校验（`ctx.llm.resolveCallConfig`）、Token 容量水位校验、活跃模型解析、事件写入（`model/selection`）
-- `src/jev.ts` — TypeSafe Jev 自动切模核心：凭据解析（配置项/环境变量）、最新上下文提取、Jev Decisions API 交互、并发 generation 竞态淘汰、Plan 模式避让与提交前实时核验
+- `src/jev.ts` — TypeSafe Jev 自动切模核心：凭据解析（配置项/环境变量）、最新上下文提取、Jev Decisions API 交互（`state` 为纯字符串，或带策略时 `{ policy, context }`）、并发 generation 竞态淘汰、Plan 模式避让与提交前实时核验
 - `src/tools.ts` — 四个工具：`set_model`、`list_models`、`switch_preset`、`list_presets`（按两个开关分别注册，可同时开启）
 - `src/index.ts` — Cordis 插件入口：`dsh:model-policy` 系统提示词段落、运行时上下文行、按开关注册工具、`agent/pre-step` 联动 Plan 模式与 Jev 自动推断、`settings.configure({auto:false})`
 - `src/client/` — 浏览器半：`index.ts` 注册 `settings.section`，`panel.tsx` 设置页（读写 `set-model` 命名空间）

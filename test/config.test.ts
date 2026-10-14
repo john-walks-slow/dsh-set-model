@@ -202,7 +202,7 @@ test("resolveConfig: handles jev config and the two independent tool toggles", (
 		jevEnabled: true,
 		jevApiKey: "test-api-key",
 		jevConfidenceThreshold: 0.85,
-		presets: [{ id: "fast", provider: "deepseek", model: "deepseek-chat" }]
+		presets: [{ id: "fast", when: "快速问答", provider: "deepseek", model: "deepseek-chat" }]
 	});
 
 	assert.equal(config.enableModelTools, false);
@@ -226,6 +226,41 @@ test("resolveConfig: warns on an out-of-range Jev confidence threshold", () => {
 	assert.ok(config.warnings.some((w) => w.includes("must be between 0.0 and 1.0")));
 	// 空档位表回落到内置三档，Jev 始终有可判定的档位空间
 	assert.equal(config.presets.length, 3);
+});
+
+test("resolveConfig: warns when nothing reads the policy prompt", () => {
+	const orphan = resolveConfig({
+		policyPrompt: "阶段策略。",
+		enableModelTools: false,
+		enablePresetTools: false,
+		jevEnabled: false
+	});
+	assert.ok(orphan.warnings.some((w) => w.includes("nothing reads it")));
+
+	// 有任一读者时不再提示
+	const withTools = resolveConfig({ policyPrompt: "阶段策略。", enableModelTools: true });
+	const withJev = resolveConfig({
+		policyPrompt: "阶段策略。",
+		enableModelTools: false,
+		jevEnabled: true
+	});
+	assert.ok(!withTools.warnings.some((w) => w.includes("nothing reads it")));
+	assert.ok(!withJev.warnings.some((w) => w.includes("nothing reads it")));
+});
+
+test("resolveConfig: warns when Jev has presets with no stage description", () => {
+	const config = resolveConfig({
+		jevEnabled: true,
+		presets: [
+			{ id: "daily", when: "常规实现", provider: "deepseek", model: "deepseek-chat" },
+			{ id: "deep", provider: "deepseek", model: "deepseek-reasoner" }
+		]
+	});
+
+	assert.ok(config.warnings.some((w) => w.includes('presets (deep): no "when" stage description')));
+	assert.ok(!config.warnings.some((w) => w.includes("presets (daily)")));
+	// Jev 关着时不提：那时 when 只是策略清单里的一行
+	assert.deepEqual(resolveConfig({ presets: [{ id: "deep", provider: "deepseek", model: "deepseek-chat" }] }).warnings, []);
 });
 
 test("Config schema: all editable fields are declared .volatile() and align with settings", () => {

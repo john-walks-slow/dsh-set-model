@@ -28,7 +28,6 @@
 - id: set-model
   name: dsh-set-model
   config:
-    mode: preset
     presets:
       - id: daily
         name: E2E 日常
@@ -45,5 +44,6 @@
     policyPrompt: e2e 探针：规划先切 deep。
     planPreset: deep
     autoRestorePlanModel: true
-    enableAgentTools: true
+    enableModelTools: true
+    enablePresetTools: false
     allowedProviders: []

@@ -516,30 +516,6 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: "14px", maxWidth: "860px" }}>
-			<div style={{ fontSize: "13px", opacity: 0.85, lineHeight: 1.6 }}>
-				两个工具开关彼此独立：自由调模工具让 Agent 用 <code>set_model</code> 切换到任意模型；档位工具让它在
-				下方档位之间切换（<code>switch_preset</code>）。
-			</div>
-
-			<div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "13px" }}>
-				<label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-					<input
-						type="checkbox"
-						checked={state.enableModelTools}
-						onChange={(event) => patch({ enableModelTools: event.target.checked })}
-					/>
-					注入自由调模工具（set_model / list_models）
-				</label>
-				<label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-					<input
-						type="checkbox"
-						checked={state.enablePresetTools}
-						onChange={(event) => patch({ enablePresetTools: event.target.checked })}
-					/>
-					注入档位工具（switch_preset / list_presets）
-				</label>
-			</div>
-
 			<div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
 				<div style={{ fontSize: "12px", opacity: 0.75 }}>
 					模型档位（档位工具与 Jev 自动决策时生效）{failures.length > 0 ? ` · ${failures.length} 个 provider 目录加载失败` : ""}
@@ -566,7 +542,7 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 										onChange={(event) => updatePreset(index, { name: event.target.value })}
 									/>
 								</Field>
-								<Field label="适用阶段（写进策略清单）">
+								<Field label="适用阶段（写进策略清单，Jev 也据此判定）">
 									<input
 										style={inputStyle}
 										value={row.when}
@@ -630,14 +606,50 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 				</div>
 			</div>
 
-			<Field label="策略提示词（system prompt，告诉 Agent 各阶段该用哪个模型/档位）">
+			<Field label="策略提示词（告诉 Agent 与 Jev 各阶段该用哪个模型/档位）">
 				<textarea
 					style={{ ...inputStyle, minHeight: "72px", fontFamily: "inherit", resize: "vertical" }}
 					value={state.policyPrompt}
 					placeholder="例如：规划与架构设计一律先切 deep；日常实现、改文件、跑测试用 daily。"
 					onChange={(event) => patch({ policyPrompt: event.target.value })}
 				/>
+				<span style={{ opacity: 0.7, lineHeight: 1.5 }}>
+					有调模工具时写进 Agent 的系统提示词；开启 Jev 自动切档位时随决策请求一并发送。
+				</span>
 			</Field>
+
+			<div style={cardStyle}>
+				<div style={{ fontSize: "12px", opacity: 0.75 }}>Agent 调模能力</div>
+				<div style={{ fontSize: "13px", opacity: 0.85, lineHeight: 1.6 }}>
+					两个工具开关彼此独立：自由调模工具让 Agent 用 <code>set_model</code> 切换到任意模型；档位工具让它在声明的档位之间切换（<code>switch_preset</code>）。
+				</div>
+				<div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "13px" }}>
+					<label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+						<input
+							type="checkbox"
+							checked={state.enableModelTools}
+							onChange={(event) => patch({ enableModelTools: event.target.checked })}
+						/>
+						注入自由调模工具（set_model / list_models）
+					</label>
+					<label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+						<input
+							type="checkbox"
+							checked={state.enablePresetTools}
+							onChange={(event) => patch({ enablePresetTools: event.target.checked })}
+						/>
+						注入档位工具（switch_preset / list_presets）
+					</label>
+				</div>
+				<Field label="Provider 白名单（逗号分隔，留空 = 不限制）">
+					<input
+						style={inputStyle}
+						value={state.allowedProviders}
+						placeholder="deepseek, anthropic"
+						onChange={(event) => patch({ allowedProviders: event.target.value })}
+					/>
+				</Field>
+			</div>
 
 			<div style={cardStyle}>
 				<div style={{ fontSize: "12px", opacity: 0.75 }}>Plan 模式自动切换</div>
@@ -701,18 +713,6 @@ export function ModelPolicyPanel({ remote }: ModelPolicyPanelProps): ReactElemen
 					/>
 					退出 Plan 模式时自动恢复进入前的模型
 				</label>
-			</div>
-
-			<div style={cardStyle}>
-				<div style={{ fontSize: "12px", opacity: 0.75 }}>调模范围限制</div>
-				<Field label="Provider 白名单（逗号分隔，留空 = 不限制）">
-					<input
-						style={inputStyle}
-						value={state.allowedProviders}
-						placeholder="deepseek, anthropic"
-						onChange={(event) => patch({ allowedProviders: event.target.value })}
-					/>
-				</Field>
 			</div>
 
 			<div style={cardStyle}>

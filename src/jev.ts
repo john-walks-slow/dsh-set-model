@@ -2,6 +2,7 @@
  * Jev 自动模型切换核心模块：
  * - 解析 Jev Decisions API 凭据（配置项 jevApiKey/jevBaseUrl/jevModel → 环境变量 JEV_API_KEY/JEV_BASE_URL/JEV_MODEL）；
  * - 提取会话最新上下文作为决策状态（state），优先使用当前回合首步的 UserMessage 输入；
+ * - 把部署的策略提示词一并作为 state.policy 送出，与 Agent 侧共用同一份判据；
  * - 将配置的模型档位（Presets）映射为 Jev 的 Choice Criteria；
  * - 调用 TypeSafe Jev 决策模型获取最佳档位与置信度；
  * - 会话级 generation 竞态保护与提交前配置实时核验；
@@ -254,13 +255,23 @@ export function extractJevContext(
 	return combined;
 }
 
+/** 一次档位判定的输入：当前上下文、候选档位，以及可选的部署策略。 */
+export interface JevDecisionRequest {
+	/** 当前指令与上一轮助手回复，见 {@link extractJevContext}。 */
+	readonly context: string;
+	/** 参与判定的档位；也是 criteria 的声明顺序。 */
+	readonly presets: readonly ResolvedModelPreset[];
+	/** 部署的策略提示词，与 Agent 侧共用同一份文本；非空时随请求发送。 */
+	readonly policyPrompt?: string;
+}
+
 /** 调用 Jev Decisions API 执行模型档位判定。 */
 export async function queryJevPresetDecision(
-	contextText: string,
-	presets: readonly ResolvedModelPreset[],
+	request: JevDecisionRequest,
 	credentials: JevCredentials,
 	signal?: AbortSignal
 ): Promise<JevDecisionOutcome | null> {
+	const { context, presets, policyPrompt } = request;
 	if (presets.length === 0) return null;
 
 	const criteria: Record<string, string> = {};
@@ -274,9 +285,13 @@ export async function queryJevPresetDecision(
 	const instructions =
 		"Which model preset is best suited for the user's current task phase and instruction?";
 
+	// 策略与当前态势是两回事，分开命名交给 Jev：state 既接受字符串也接受对象。
+	const policy = policyPrompt?.trim() ?? "";
+	const state = policy === "" ? context : { policy, context };
+
 	const payload = {
 		model: credentials.model,
-		state: contextText,
+		state,
 		questions: {
 			preset: {
 				type: "choice",
@@ -486,8 +501,11 @@ export async function runJevModelInference(
 
 	try {
 		const decision = await queryJevPresetDecision(
-			contextText,
-			initialConfig.presets,
+			{
+				context: contextText,
+				presets: initialConfig.presets,
+				policyPrompt: initialConfig.policyPrompt
+			},
 			credentials,
 			controller.signal
 		);

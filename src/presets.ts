@@ -74,13 +74,16 @@ export function renderPresetRoster(presets: readonly ResolvedModelPreset[]): str
 }
 
 /**
- * The `dsh:model-policy` system prompt section. Empty when the deployment
- * declares neither a policy prompt nor preset mode, so an unconfigured plugin
- * leaves no trace in the prompt.
+ * The `dsh:model-policy` system prompt section.
+ *
+ * The policy prompt is an instruction the reader has to be able to act on: the
+ * Agent sees it only while it holds a model-switching tool, while Jev reads the
+ * same text from the decision request. Nothing consumes it when both tool
+ * switches and Jev are off, so an unconfigured plugin leaves no trace.
  */
 export function renderModelPolicySection(config: ResolvedSetModelConfig): string {
 	const blocks: string[] = [];
-	if (config.policyPrompt !== "") {
+	if (config.policyPrompt !== "" && (config.enableModelTools || config.enablePresetTools)) {
 		blocks.push(config.policyPrompt);
 	}
 	if (config.presets.length > 0 && (config.enablePresetTools || config.jevEnabled)) {
