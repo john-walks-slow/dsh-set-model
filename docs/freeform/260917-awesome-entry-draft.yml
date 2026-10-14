@@ -1,5 +1,5 @@
 # awesome-dsh-plugin 投稿草稿（data/plugins/john-walks-slow__dsh-set-model.yml）
-# 前置：仓库满 1 天后才可提。流程：fork awesome-dsh-plugin → 只加这一个文件 → PR。
+# 已收录（PR #5503，2026-09）；本文件是条目内容的同步草稿，改描述时提新 PR 更新该文件。
 # 注意：description 含 ": " 必须加引号；描述会被对着代码核，只写实际行为。
 # 搜索机制（dsh-market 实测源码）：索引 name/npm/owner/description(en+zh)/category，
 # 不索引 README 与 npm keywords——双语描述是唯一搜索优化面。
@@ -7,5 +7,5 @@ url: https://github.com/john-walks-slow/dsh-set-model
 name: john-walks-slow/dsh-set-model
 category: model
 description:
-  en: 'Model switching and reasoning-effort control for DeepSeek Harness: set_model and list_models agent tools let the agent autonomously change its provider, model or thinking depth (reasoning effort) mid-task with a mandatory reason, a provider whitelist and a context-window token-pressure guard, the active model is injected into the runtime context, and Plan Mode auto-transition switches to a configured planning model on entering plan mode and restores the previous execution model on exit.'
-  zh: '为 DSH 提供动态模型切换与思考深度调节：set_model / list_models 两个 Agent 工具让模型按任务难度自主切换 provider、model 与 reasoningEffort（思考深度），强制附带切换理由，带 Provider 白名单与上下文窗口 Token 水位护栏，活跃模型注入运行时上下文；进入 Plan 规划模式自动切换到配置的规划模型，退出自动恢复日常执行模型。'
+  en: 'Model policy for DeepSeek Harness: the TypeSafe Jev decision model reads the latest instruction at the start of each turn, classifies the task and auto-switches between the declared model presets — deep reasoning for hard debugging, the cost-effective tier for routine work — while a preset that declares reasoning effort only retunes thinking depth on the same model. Also set_model / list_models tools for the agent to switch provider, model or reasoning effort itself with a mandatory reason, switch_preset / list_presets for preset-only switching, a provider whitelist and a context-window token-pressure guard, the active model injected into runtime context, Plan Mode auto-transition, and a bundled Web settings page.'
+  zh: '为 DSH 提供模型策略：接入 TypeSafe Jev 决策模型，每轮对话开局读取最新指令判断任务类型，自动在声明的档位间切换模型（疑难升到高推理档位、日常回到高性价比档位），档位可只声明思考强度，从而在同一模型上自动调节思考深度；另含 set_model / list_models 两个 Agent 工具让模型按任务难度自主切换 provider、model 与 reasoningEffort（思考深度，强制附带切换理由）、switch_preset / list_presets 档位切换、Provider 白名单与上下文窗口 Token 水位护栏、活跃模型注入运行时上下文、Plan 规划模式自动升降级，以及插件自带设置页。'

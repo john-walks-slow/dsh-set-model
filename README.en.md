@@ -5,17 +5,16 @@
   <a href="./README.en.md"><strong>English</strong></a>
 </p>
 
-A DeepSeek Harness (DSH / cordis) plugin for **model policy**: it turns "which model belongs to which task stage" into a deployment-declarable rule the agent actually follows.
+A DeepSeek Harness (DSH / cordis) plugin for **model policy**: it turns "which model and how deep to think for a given task" into a rule the deployment declares, the agent follows, and Jev re-decides every turn.
 
+- **Automatic switching (Jev)**: the TypeSafe Jev decision model reads your latest instruction at the start of every turn, classifies the task and moves between your declared presets by itself — deep reasoning for hard debugging, the cheap tier for copy edits and test runs; no manual intervention, and no need to say "think harder" in the prompt. A preset that declares reasoning effort only moves **thinking depth on the same model**;
 - **Free model tools**: the agent switches provider, model and reasoningEffort by task difficulty via `set_model` / `list_models`;
 - **Preset tools**: the deployment declares a set of model presets (model + reasoning effort) and the agent may only switch between them (`switch_preset` / `list_presets`). A preset may omit `provider` / `model` (empty = keep the active model) so it tunes thinking depth alone; an empty `presets` list falls back to the built-in `low` / `medium` / `high`;
-- **Jev auto preset switching**: the TypeSafe Jev decision model picks a preset per turn in milliseconds;
-- The three switches are **fully independent** and combine freely;
+- The automatic switch and the two tool switches are **fully independent** and combine freely (Jev only, tools only, both, neither);
 - Both modes accept a **policy prompt** that goes into the system prompt and tells the agent which preset each stage should use;
-- The plugin injects the active model and preset into the runtime context, and switches models automatically alongside Plan Mode;
-- **Jev Auto Model Switching**: leverages the TypeSafe Jev decision model to autonomously switch model presets upon new turn prompts in milliseconds, governed by an independent toggle.
+- The plugin injects the active model and preset into the runtime context, and switches models automatically alongside Plan Mode.
 
-Switch to deep reasoning for hard problems, stay on the cost-effective tier for routine work — no manual configuration changes needed.
+Switch to deep reasoning for hard problems, stay on the cost-effective tier for routine work — with Jev enabled that policy runs itself every turn, no manual configuration changes needed.
 
 ![Model preset settings page](assets/model-policy-settings.png)
 
@@ -126,19 +125,25 @@ The plugin watches the plan projection state on `agent/pre-step` — zero manual
 
 ## Jev Autonomous Model Switching
 
-In addition to explicit tool invocation by the agent, `dsh-set-model` supports automatic model preset switching powered by the **TypeSafe Jev decision model**:
+With `jevEnabled` on, the plugin asks the **TypeSafe Jev decision model** once per turn, on the first step: what kind of task is this instruction, and which preset fits it. The decision flow:
+
+1. take the latest user instruction of the current turn (even before it is committed to the session), append the previous assistant response as background, then end-align and truncate to 2000 characters;
+2. offer every preset in `presets` (`id` / `name` / `when`) plus `keep` (stay as-is) as the candidate set, and let Jev return the best preset with a confidence score;
+3. below `jevConfidenceThreshold` (default 0.7) nothing happens, so there is no pointless switching;
+4. on a hit the plugin writes a `model/selection` event — the same mechanism as the GUI model picker, so the Web UI stays in sync; the switch applies to requests from the next step onward.
+
+"tweak the color of this button" stays on the daily preset; "orders occasionally get lost in production, help me find out why" moves to the deep preset. The actual decision shows up in the host log:
+
+```
+dsh-set-model: [Jev] auto-switched session <id> to preset "deep" (deepseek/deepseek-reasoner · reasoning: max) with confidence 0.87
+```
+
+When a preset declares `reasoningEffort` only (`provider` / `model` left empty), switching means **adjusting thinking depth on the same model** — `low` for routine work, `max` for hard problems: same model, different thinking budget.
 
 - **Ultra-low cost & sub-second latency**: based on OpenRouter Decisions API (~200–300ms, ~$0.000015 / request);
-- **Turn-entry phase awareness**: inspects latest user intent on the first step of a turn (`step === 1`), prioritizing claimed uncommitted messages and dynamically mapping declared presets (`id`/`name`/`when`) into choice criteria;
-- **Dual independent switches**:
-  - `enableModelTools` / `enablePresetTools`: control which tool pair is injected;
-  - `jevEnabled`: controls whether Jev autonomous switching is enabled;
-  - Both toggles operate completely independently;
-- **Pure Jev Credential Architecture**:
-  1. Plugin settings `jevApiKey` / `jevBaseUrl` / `jevModel`;
-  2. Environment variables `JEV_API_KEY` / `JEV_BASE_URL` / `JEV_MODEL`;
-  Completely independent of proprietary platforms (e.g. OpenRouter) or machine-local private vaults (api-vault) — users configure their own Base URL and API Key cleanly;
-- **Robust guardrails**: per-session generation race fences, timeout fallback (3s cutoff), and mutual exclusion with Plan Mode.
+- **Generic credentials**: configure `jevApiKey` / `jevBaseUrl` / `jevModel` on the settings page, or use the `JEV_API_KEY` / `JEV_BASE_URL` / `JEV_MODEL` environment variables — no tie to a specific platform or to a machine-local vault (api-vault);
+- **Robust guardrails**: 3s timeout cutoff, per-session generation race fences (a newer instruction voids the in-flight decision) and mutual exclusion with Plan Mode; any failure only logs a warning and keeps the current preset, never blocking the turn;
+- **Decoupled from the tool switches**: `jevEnabled` is independent of `enableModelTools` / `enablePresetTools` — you can run Jev alone, without exposing model tools to the agent.
 
 ## Safety guardrails
 
@@ -160,7 +165,8 @@ The plugin ships a Web settings page ("动态模型", Settings → 动态模型)
 
 - the mode (free / preset);
 - the preset table — add, remove and reorder rows; provider, model and reasoning effort are pickers fed by the live model catalog; plus `id`, display name and target stage;
-- the policy prompt, the Plan target (preset or model), `autoRestorePlanModel`, the two tool switches and `allowedProviders`.
+- the policy prompt, the Plan target (preset or model), `autoRestorePlanModel`, the two tool switches and `allowedProviders`;
+- the Jev auto-switching toggle and its advanced options (API Key / Base URL / model / confidence threshold), plus a "test connection" button that probes the Decisions API for reachability and latency.
 
 Saving re-applies the plugin configuration on the host immediately, with no restart. Fields must be marked `volatile` to appear in the settings form (a DSH settings-system rule).
 
@@ -222,7 +228,7 @@ dsh plugin --profile web add github:john-walks-slow/dsh-set-model
 
 ## Permissions & compatibility
 
-- **No direct side effects (standard path) & lightweight decision network (Jev path)**: standard model policy executes without external services, direct network requests, or direct filesystem writes; when autonomous Jev switching is enabled, only lightweight decision requests are sent to the configured Decisions API at turn start with a 3-second timeout fuse (failures degrade gracefully to warnings without blocking normal turn execution). Changes are recorded strictly via standard Session events (`model/selection`) and projected via Runtime Context and system prompt sections;
+- **No direct side effects (standard path) & lightweight decision network (Jev path)**: standard model policy executes without external services, direct network requests, or direct filesystem writes; when autonomous Jev switching is enabled, only a lightweight task summary is sent to the configured Decisions API on the first step of each turn (the current instruction plus the previous assistant response, end-truncated to 2000 characters, together with the preset list; a 3-second timeout fuse means failures degrade gracefully to warnings without blocking normal turn execution). Changes are recorded strictly via standard Session events (`model/selection`) and projected via Runtime Context and system prompt sections;
 - **Browser half**: the settings page registers a `settings.section` from `lib/client.js` (a build artifact) and only calls DSH's `remote.settings` / `remote.session` RPCs — no network requests of its own
 - **Host version requirement**: DSH `^0.1.7-rc.2 || ^0.2.0-rc.1` (on 0.1.2–0.1.6 the installer reports an explicit plugin/dsh version incompatibility; upgrade DSH)
 - **Dependency declaration**: every DSH runtime package (`cordis`, `dsh-agent`, `dsh-llm`, `dsh-session`, `dsh-tools`, plus optional `dsh-settings`) is declared as a `peerDependency`, so the DSH module resolver routes the plugin's `@deepseek-ai/*` imports to the **host-provided copies** — the plugin never ships or hoists its own copies of them; the only runtime dependency is the leaf schema library `@deepseek-ai/schemastery` (`react` / `esbuild` / `@types/react` build the browser half only; React is provided by the web shell at runtime). Node ≥ 22.5
