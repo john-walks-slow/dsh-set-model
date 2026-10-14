@@ -201,10 +201,9 @@ function rowValue(row: PresetRow): Record<string, unknown> {
 }
 
 export function buildOps(state: FormState): Array<{ op: "set" | "unset"; path: string[]; value?: unknown }> {
+	// 已废弃的 mode / enableAgentTools 不再写入新 Config，宿主的 settings.write() 会拒绝
+	// 「不在 schema 中」的路径；保留它们在 profile 里无害，schemastery 会把多余字段丢掉。
 	const ops: Array<{ op: "set" | "unset"; path: string[]; value?: unknown }> = [
-		// 已废弃的旧字段，保存时顺手清掉，避免留在 profile 里混淆。
-		{ op: "unset", path: ["mode"] },
-		{ op: "unset", path: ["enableAgentTools"] },
 		{ op: "set", path: ["presets"], value: state.presets.map(rowValue) },
 		{ op: "set", path: ["policyPrompt"], value: state.policyPrompt.trim() },
 		{ op: "set", path: ["autoRestorePlanModel"], value: state.autoRestorePlanModel },
