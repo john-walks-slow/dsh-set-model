@@ -5,7 +5,7 @@
   <a href="./README.en.md"><strong>English</strong></a>
 </p>
 
-为 DeepSeek Harness（DSH / cordis plugin）提供**模型策略**：由 Jev 决策模型或调模工具驱动，让 Agent 按任务场景自主切换模型预设与思考深度。
+DeepSeek Harness（DSH / cordis plugin）插件：通过 Jev 或工具调用，让 Agent 根据任务场景自主切换模型预设和思考深度。
 
 - **自动换档（Jev）**：接入 TypeSafe Jev 决策模型，每轮对话开局读一次你的最新指令判断任务类型，自动在声明的档位间换档——排查疑难升到高推理档位，改文案、跑测试回到日常档位，不用手动干预、也不必在提问时交代"用深度思考"；档位只声明思考强度时，换档就是**在同一个模型上自动调节思考深度**；
 - **自由调模工具**：Agent 用 `set_model` / `list_models` 按任务难度自主切换 provider、model 与 reasoningEffort；
@@ -28,7 +28,7 @@
 
 > 档位工具约束的是 **Agent 的工具面**；你在 GUI 模型选择器里的手动切换不受限制（DSH 未提供拦截用户切模的插件接口），可作为人工兜底通道。三个开关都不影响 GUI 的既有行为。
 
-## 模型策略提示词
+## 策略提示词
 
 `policyPrompt` 是这一份策略的**唯一出处**，有两个读者：
 
@@ -238,7 +238,7 @@ dsh plugin --profile web add github:john-walks-slow/dsh-set-model
 
 ## 权限与兼容
 
-- **零直接副作用（常规路径）与轻量决策网络（Jev 路径）**：常规模型策略路径无外部服务、无插件自身网络请求（模型路由与能力查询均经由 DSH 核心 `llm` 服务）、无直接文件系统写入；启用 Jev 自动切模后，仅在回合首步向用户配置的 Jev Decisions API 发送轻量任务摘要（当前指令与上一轮助手回复的尾部 2000 字符、策略提示词、档位清单，带 3 秒熔断超时保护，超时或网络异常仅 warn 降级，绝不阻塞主会话正常进行）。仅通过会话事件 API 写入 `model/selection` 事件（由 DSH 会话系统落盘）并注入一行 Runtime Context 与一段系统提示词
+- **零直接副作用（常规路径）与轻量决策网络（Jev 路径）**：常规路径无外部服务、无插件自身网络请求（模型路由与能力查询均经由 DSH 核心 `llm` 服务）、无直接文件系统写入；启用 Jev 自动切模后，仅在回合首步向用户配置的 Jev Decisions API 发送轻量任务摘要（当前指令与上一轮助手回复的尾部 2000 字符、策略提示词、档位清单，带 3 秒熔断超时保护，超时或网络异常仅 warn 降级，绝不阻塞主会话正常进行）。仅通过会话事件 API 写入 `model/selection` 事件（由 DSH 会话系统落盘）并注入一行 Runtime Context 与一段系统提示词
 - **浏览器半**：设置页以 `lib/client.js`（构建产物）注册 `settings.section`，仅调用 DSH 的 `remote.settings` / `remote.session` RPC，不发起自有网络请求
 - **宿主版本要求**：DSH `^0.1.7-rc.2 || ^0.2.0-rc.1`（0.1.2~0.1.6 会得到明确的"插件与 dsh 版本不兼容"安装提示，请升级 DSH）
 - **依赖声明**：DSH 运行时包（`cordis`、`dsh-agent`、`dsh-llm`、`dsh-session`、`dsh-tools`，以及可选的 `dsh-settings`）全部声明为 `peerDependencies`——DSH 的模块解析层据此把插件内的 `@deepseek-ai/*` import 路由到**宿主自带副本**，插件绝不携带、也不 hoist 这些包的副本；唯一运行时依赖是纯 schema 库 `@deepseek-ai/schemastery`（`react` / `esbuild` / `@types/react` 只用于构建浏览器半，运行时由 Web 壳提供 React）。Node ≥ 22.5

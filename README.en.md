@@ -5,7 +5,7 @@
   <a href="./README.en.md"><strong>English</strong></a>
 </p>
 
-A DeepSeek Harness (DSH / cordis) plugin for **model policy**: it lets the agent switch model presets and thinking depth on its own, following the task at hand — driven by the Jev decision model or by its own tool calls.
+A DeepSeek Harness (DSH / cordis) plugin: through Jev or through its own tool calls, the agent switches model presets and thinking depth on its own, following the task at hand.
 
 - **Automatic switching (Jev)**: the TypeSafe Jev decision model reads your latest instruction at the start of every turn, classifies the task and moves between your declared presets by itself — deep reasoning for hard debugging, the cheap tier for copy edits and test runs; no manual intervention, and no need to say "think harder" in the prompt. A preset that declares reasoning effort only moves **thinking depth on the same model**;
 - **Free model tools**: the agent switches provider, model and reasoningEffort by task difficulty via `set_model` / `list_models`;
@@ -28,7 +28,7 @@ Switch to deep reasoning for hard problems, stay on the cost-effective tier for 
 
 > The preset tools constrain the **agent's tool surface**. Your own switching through the GUI model picker is unrestricted (DSH exposes no plugin hook to intercept user selections) and remains a manual fallback. None of the switches changes existing GUI behaviour.
 
-## Model policy prompt
+## Policy prompt
 
 `policyPrompt` is the single source of that policy, and it has two readers:
 
@@ -236,7 +236,7 @@ dsh plugin --profile web add github:john-walks-slow/dsh-set-model
 
 ## Permissions & compatibility
 
-- **No direct side effects (standard path) & lightweight decision network (Jev path)**: standard model policy executes without external services, direct network requests, or direct filesystem writes; when autonomous Jev switching is enabled, only a lightweight task summary is sent to the configured Decisions API on the first step of each turn (the current instruction plus the previous assistant response, end-truncated to 2000 characters, together with the policy prompt and the preset list; a 3-second timeout fuse means failures degrade gracefully to warnings without blocking normal turn execution). Changes are recorded strictly via standard Session events (`model/selection`) and projected via Runtime Context and system prompt sections;
+- **No direct side effects (standard path) & lightweight decision network (Jev path)**: the standard path runs without external services, direct network requests, or direct filesystem writes; when autonomous Jev switching is enabled, only a lightweight task summary is sent to the configured Decisions API on the first step of each turn (the current instruction plus the previous assistant response, end-truncated to 2000 characters, together with the policy prompt and the preset list; a 3-second timeout fuse means failures degrade gracefully to warnings without blocking normal turn execution). Changes are recorded strictly via standard Session events (`model/selection`) and projected via Runtime Context and system prompt sections;
 - **Browser half**: the settings page registers a `settings.section` from `lib/client.js` (a build artifact) and only calls DSH's `remote.settings` / `remote.session` RPCs — no network requests of its own
 - **Host version requirement**: DSH `^0.1.7-rc.2 || ^0.2.0-rc.1` (on 0.1.2–0.1.6 the installer reports an explicit plugin/dsh version incompatibility; upgrade DSH)
 - **Dependency declaration**: every DSH runtime package (`cordis`, `dsh-agent`, `dsh-llm`, `dsh-session`, `dsh-tools`, plus optional `dsh-settings`) is declared as a `peerDependency`, so the DSH module resolver routes the plugin's `@deepseek-ai/*` imports to the **host-provided copies** — the plugin never ships or hoists its own copies of them; the only runtime dependency is the leaf schema library `@deepseek-ai/schemastery` (`react` / `esbuild` / `@types/react` build the browser half only; React is provided by the web shell at runtime). Node ≥ 22.5
