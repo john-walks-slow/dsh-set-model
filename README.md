@@ -5,13 +5,13 @@
   <a href="./README.en.md"><strong>English</strong></a>
 </p>
 
-为 DeepSeek Harness（DSH / cordis plugin）提供**模型策略**：把"什么任务用什么模型、思考多深"变成部署可声明、Agent 可遵守、还能每轮自动判定的显式规则。
+为 DeepSeek Harness（DSH / cordis plugin）提供**模型策略**：由 Jev 决策模型或调模工具驱动，让 Agent 按任务场景自主切换模型预设与思考深度。
 
 - **自动换档（Jev）**：接入 TypeSafe Jev 决策模型，每轮对话开局读一次你的最新指令判断任务类型，自动在声明的档位间换档——排查疑难升到高推理档位，改文案、跑测试回到日常档位，不用手动干预、也不必在提问时交代"用深度思考"；档位只声明思考强度时，换档就是**在同一个模型上自动调节思考深度**；
 - **自由调模工具**：Agent 用 `set_model` / `list_models` 按任务难度自主切换 provider、model 与 reasoningEffort；
 - **档位工具**：部署声明一组「模型 + 思考强度」档位，Agent 只能在档位间切换（`switch_preset` / `list_presets`）；档位可以只声明思考强度而不绑定模型（`provider` / `model` 留空 = 沿用当前模型），从而只调节思考深度；未声明 `presets` 时内置 `low` / `medium` / `high` 三档；
 - 自动换档与两个工具面开关**彼此独立**，可任意组合（只开 Jev、只开工具、都开、都关）；
-- 可配置一段**策略提示词**，写进系统提示词告诉 Agent 各阶段该用哪个档位；
+- 可配置一段**策略提示词**：同一份文本既告诉 Agent、也告诉 Jev 各阶段该用哪个档位；
 - 插件把当前模型与档位注入运行时上下文，并随 Plan 模式自动升降级。
 
 攻坚疑难问题时升到高推理档位，日常执行保持高性价比档位——开启 Jev 后这条策略每轮自动执行，不再需要用户手动改配置。
@@ -30,14 +30,21 @@
 
 ## 模型策略提示词
 
-配置 `policyPrompt` 会作为 `## Model policy` 段落写进系统提示词；开启档位工具或 Jev 时，插件还会自动追加档位清单：
+`policyPrompt` 是这一份策略的**唯一出处**，有两个读者：
+
+| 读者 | 何时读到 | 读到什么 |
+|---|---|---|
+| Agent | 两个工具开关至少开一个时 | 作为 `## Model policy` 段落写进系统提示词 |
+| Jev | `jevEnabled` 打开时 | 随每轮决策请求发出（`state.policy`），与当前指令、上一轮回复一同进入判定 |
+
+两个读者都不在时（工具全关、Jev 也关）这段配置不被读取，插件只在日志里给一条 warning。
 
 ```yaml
 policyPrompt: |
   规划与疑难排查一律先切 deep；日常实现、改文件、跑测试用 daily。
 ```
 
-开启档位工具后 Agent 实际看到的（由 `presets` 的 `id`/`name`/`when` 自动生成，无需手写）：
+开启档位工具后 Agent 实际看到的（档位清单由 `presets` 的 `id`/`name`/`when` 自动生成，无需手写）：
 
 ```
 ## Model policy
@@ -49,6 +56,8 @@ policyPrompt: |
 - **daily（日常执行）** — deepseek/deepseek-chat · reasoning low — 适用：常规实现、修改、测试
 - **deep（深度攻坚）** — deepseek/deepseek-reasoner · reasoning max — 适用：疑难排查、架构设计
 ```
+
+档位的 `when` 同时也是 Jev 的判定依据（档位名与思考强度附在其后）。Jev 开启时缺 `when` 的档位只剩一个名字可判，插件会就此给一条 warning。
 
 未配置任何策略时段落为空，不会在提示词里留下痕迹。
 
@@ -163,9 +172,10 @@ dsh-set-model: [Jev] auto-switched session <id> to preset "deep" (deepseek/deeps
 
 插件自带 Web 设置页「动态模型」（设置 → 动态模型），可可视化维护：
 
-- 模式切换（自由 / 档位）；
 - 档位表增删排序，provider / model / 思考强度均为下拉选择（数据取自当前模型目录），附 `id`、显示名、适用阶段；
-- 策略提示词、Plan 目标（档位或模型）、`autoRestorePlanModel`、两个工具开关、`allowedProviders`；
+- 策略提示词；
+- Agent 调模能力：两个工具开关与 `allowedProviders`；
+- Plan 目标（档位或模型）与 `autoRestorePlanModel`；
 - Jev 自动换档开关与高级选项（API Key / Base URL / 模型 / 置信度阈值），附「测试连接」按钮，探测 Decisions API 的可用性与时延。
 
 保存后宿主即时重新应用插件配置，无需重启。字段需标记为 `volatile` 才会出现在设置表单里（DSH 设置系统的约定）。
@@ -185,7 +195,7 @@ Settings 命名空间为插件在 profile 里的 loader entry id：**`set-model`
     presets:                      # 缺省为内置三档 low / medium / high（均不绑定模型）
       - id: daily                 # 稳定标识，Agent 用它切换
         name: 日常执行             # 展示名，缺省用 id
-        when: 常规实现、修改、测试  # 适用阶段，写进策略清单
+        when: 常规实现、修改、测试  # 适用阶段：写进策略清单，也是 Jev 的判定依据
         provider: deepseek        # provider 与 model 同时留空 = 沿用当前模型，只调思考强度
         model: deepseek-chat
         reasoningEffort: low      # off | minimal | low | medium | high | xhigh | max，缺省跟随模型默认
@@ -195,7 +205,7 @@ Settings 命名空间为插件在 profile 里的 loader entry id：**`set-model`
         provider: deepseek
         model: deepseek-reasoner
         reasoningEffort: max
-    policyPrompt: |               # 可选：附加策略说明
+    policyPrompt: |               # 可选：策略文本，Agent（有工具时）与 Jev 共用
       线上事故排查一律先切 deep。
     planPreset: deep              # 进入 Plan 模式使用的档位 id（优先）
     planModel:                    # 未设 planPreset 时，进入 Plan 模式使用的模型
@@ -228,7 +238,7 @@ dsh plugin --profile web add github:john-walks-slow/dsh-set-model
 
 ## 权限与兼容
 
-- **零直接副作用（常规路径）与轻量决策网络（Jev 路径）**：常规模型策略路径无外部服务、无插件自身网络请求（模型路由与能力查询均经由 DSH 核心 `llm` 服务）、无直接文件系统写入；启用 Jev 自动切模后，仅在回合首步向用户配置的 Jev Decisions API 发送轻量任务摘要（当前指令与上一轮助手回复的尾部 2000 字符 + 档位清单，带 3 秒熔断超时保护，超时或网络异常仅 warn 降级，绝不阻塞主会话正常进行）。仅通过会话事件 API 写入 `model/selection` 事件（由 DSH 会话系统落盘）并注入一行 Runtime Context 与一段系统提示词
+- **零直接副作用（常规路径）与轻量决策网络（Jev 路径）**：常规模型策略路径无外部服务、无插件自身网络请求（模型路由与能力查询均经由 DSH 核心 `llm` 服务）、无直接文件系统写入；启用 Jev 自动切模后，仅在回合首步向用户配置的 Jev Decisions API 发送轻量任务摘要（当前指令与上一轮助手回复的尾部 2000 字符、策略提示词、档位清单，带 3 秒熔断超时保护，超时或网络异常仅 warn 降级，绝不阻塞主会话正常进行）。仅通过会话事件 API 写入 `model/selection` 事件（由 DSH 会话系统落盘）并注入一行 Runtime Context 与一段系统提示词
 - **浏览器半**：设置页以 `lib/client.js`（构建产物）注册 `settings.section`，仅调用 DSH 的 `remote.settings` / `remote.session` RPC，不发起自有网络请求
 - **宿主版本要求**：DSH `^0.1.7-rc.2 || ^0.2.0-rc.1`（0.1.2~0.1.6 会得到明确的"插件与 dsh 版本不兼容"安装提示，请升级 DSH）
 - **依赖声明**：DSH 运行时包（`cordis`、`dsh-agent`、`dsh-llm`、`dsh-session`、`dsh-tools`，以及可选的 `dsh-settings`）全部声明为 `peerDependencies`——DSH 的模块解析层据此把插件内的 `@deepseek-ai/*` import 路由到**宿主自带副本**，插件绝不携带、也不 hoist 这些包的副本；唯一运行时依赖是纯 schema 库 `@deepseek-ai/schemastery`（`react` / `esbuild` / `@types/react` 只用于构建浏览器半，运行时由 Web 壳提供 React）。Node ≥ 22.5
