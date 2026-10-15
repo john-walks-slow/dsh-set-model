@@ -79,17 +79,17 @@ export const ModelPresetConfigSchema = z
 export const DEFAULT_PRESETS: ModelPresetConfig[] = [
 	{
 		id: "low",
-		when: "单轮即可答的问答、文案与格式整理、只读查看、改一处文案或常量，无需读多个文件才能定位",
+		when: "简单执行",
 		reasoningEffort: "low"
 	},
 	{
 		id: "medium",
-		when: "常规实现与修改：改动集中在 1 个模块内、需求明确无需方案权衡、需要跑测试验证",
+		when: "常规任务",
 		reasoningEffort: "medium"
 	},
 	{
 		id: "high",
-		when: "需要多步推理或方案权衡：跨 2 个以上模块的改动、需先读多个文件才能定位的排障、架构与接口设计、并发或性能类疑难",
+		when: "疑难问题分析、方案设计、深度推理",
 		reasoningEffort: "high"
 	}
 ];
