@@ -1,6 +1,6 @@
 {
   "name": "dsh-set-model",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A DeepSeek Harness (DSH) plugin: through the TypeSafe Jev decision model (it reads each turn's instruction, classifies the task and picks a preset) or through its own tool calls, the agent switches model presets and thinking depth on its own, following the task at hand. Includes set_model / list_models agent tools, preset mode with switch_preset / list_presets, presets that declare reasoning effort only so one model can retune its own thinking depth, a configurable stage-to-preset prompt, plan-mode auto-transition, provider whitelist and context-window guards, active-model runtime context injection, and a bundled Web settings page. 为 DSH 提供的插件：通过 TypeSafe Jev 决策模型（每轮读取指令、判断任务类型并选出档位）或调模工具调用，让 Agent 根据任务场景自主切换模型预设和思考深度。含 set_model / list_models 自主调模工具、switch_preset / list_presets 档位切换、只声明思考强度即可在同一模型上调节思考深度的档位、可配置的「阶段→档位」提示词、Plan 模式自动升降级、Provider 白名单与上下文窗口护栏、活跃模型运行时上下文注入，以及插件自带设置页。",
   "type": "module",
   "main": "./dist/src/index.js",
